@@ -319,6 +319,16 @@ async fn shelf_add(app: AppHandle, paths: Vec<String>) {
 }
 
 #[tauri::command]
+async fn shelf_drop(app: AppHandle, paths: Vec<String>) {
+    sys::log(&format!("shelf: {} file(s) dropped", paths.len()));
+    shelf::add(&app, paths);
+    if let Some(z) = app.get_webview_window("dropzone") {
+        let _ = z.hide();
+    }
+    let _ = app.emit_to("island", "shelf-dropped", json!({}));
+}
+
+#[tauri::command]
 async fn shelf_remove(app: AppHandle, path: String) {
     shelf::remove(&app, &path);
 }
@@ -374,7 +384,7 @@ fn main() {
             get_settings, save_settings, monitors, set_hit, set_solid, media_cmd, set_volume,
             clip_list, clip_set, note_load, note_save, open_settings_cmd, notif_open, notif_act, copy_show,
             sticker_create, sticker_get, sticker_update, sticker_resize, sticker_delete, stickers_show_all, stickers_count, reminder_action,
-            shelf_list, shelf_add, shelf_remove, shelf_clear, shelf_open, shelf_drag,
+            shelf_list, shelf_add, shelf_drop, shelf_remove, shelf_clear, shelf_open, shelf_drag,
             update_check, update_install, app_version
         ])
         .setup(move |app| {
@@ -442,6 +452,9 @@ fn main() {
             sys::spawn_all(&handle);
             extra::spawn_all(&handle);
             shelf::load();
+            shelf::create_zone(&handle);
+            let h6 = handle.clone();
+            std::thread::spawn(move || shelf::zone_loop(h6));
             let h5 = handle.clone();
             std::thread::spawn(move || update::watch(h5));
             stickers::restore(&handle);

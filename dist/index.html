@@ -845,6 +845,11 @@ textarea{user-select:text;-webkit-user-select:text}
   listen('tauri://drag-enter', p => { if (p && p.paths && p.paths.length) dragIn(); });
   listen('tauri://drag-over', () => dragIn());
   listen('tauri://drag-leave', dragOut);
+  listen('drag-near', p => p && p.on ? dragIn() : dragOut());
+  listen('shelf-dropped', () => {
+    dragOut();
+    invoke('shelf_list').then(list => { setShelf(list); hubTab = 'shelf'; drawHist(); expanded = 'hist'; trans = null; render(); kick(90); });
+  });
   listen('tauri://drag-drop', p => {
     dragOut();
     const paths = (p && p.paths) || []; if (!paths.length) return;

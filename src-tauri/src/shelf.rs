@@ -157,3 +157,98 @@ pub fn drag_out(app: &AppHandle, paths: Vec<String>) {
         }
     });
 }
+
+/* ------------------------------------------------------------ drop zone */
+
+// The island window lets the mouse through, and Windows doesn't reliably offer it file drops that way.
+// While a file is being dragged near the island, a plain invisible window sits on top of it and takes the drop.
+
+const ZONE_W: f64 = 460.0;
+const ZONE_H: f64 = 130.0;
+
+pub fn create_zone(app: &AppHandle) {
+    let built = tauri::WebviewWindowBuilder::new(app, "dropzone", tauri::WebviewUrl::App("dropzone.html".into()))
+        .title("Island drop")
+        .inner_size(ZONE_W, ZONE_H)
+        .decorations(false)
+        .transparent(true)
+        .shadow(false)
+        .resizable(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .focused(false)
+        .focusable(false)
+        .visible(false)
+        .build();
+    if let Err(e) = built {
+        crate::sys::log(&format!("shelf: drop zone failed: {}", e));
+    }
+}
+
+fn dragging_now() -> bool {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
+    use windows::Win32::UI::WindowsAndMessaging::{FindWindowW, IsWindowVisible};
+    unsafe {
+        if GetAsyncKeyState(VK_LBUTTON.0 as i32) as u16 & 0x8000 == 0 {
+            return false;
+        }
+        // Explorer and most apps show their drag picture in a window of this class
+        match FindWindowW(w!("SysDragImage"), PCWSTR::null()) {
+            Ok(h) if !h.0.is_null() => IsWindowVisible(h).as_bool(),
+            _ => false,
+        }
+    }
+}
+
+pub fn zone_loop(app: AppHandle) {
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
+    let mut shown = false;
+    let mut away_since: Option<std::time::Instant> = None;
+    let mut logged = false;
+    loop {
+        std::thread::sleep(std::time::Duration::from_millis(60));
+        let (Some(isl), Some(zone)) = (app.get_webview_window("island"), app.get_webview_window("dropzone")) else { continue };
+        let drag = dragging_now();
+        if drag && !logged {
+            logged = true;
+            crate::sys::log("shelf: file drag noticed");
+        }
+        let mut near = false;
+        if drag && !crate::sys::FULL_NOW.load(std::sync::atomic::Ordering::SeqCst) {
+            if let (Ok(Some(m)), Ok(_)) = (isl.current_monitor(), isl.outer_position()) {
+                let mut pt = POINT::default();
+                if unsafe { GetCursorPos(&mut pt) }.is_ok() {
+                    let k = m.scale_factor();
+                    let cx = m.position().x as f64 + m.size().width as f64 / 2.0;
+                    let top = m.position().y as f64;
+                    let w = ZONE_W * k;
+                    let h = ZONE_H * k;
+                    // a generous catch area: the zone appears a bit before the cursor reaches the island
+                    near = (pt.x as f64 - cx).abs() < w / 2.0 + 60.0 * k && (pt.y as f64) < top + h + 80.0 * k && (pt.y as f64) >= top - 2.0;
+                    if near && !shown {
+                        let _ = zone.set_position(tauri::PhysicalPosition::new((cx - w / 2.0).round() as i32, top as i32));
+                        let _ = zone.set_size(tauri::PhysicalSize::new(w.round() as u32, h.round() as u32));
+                    }
+                }
+            }
+        }
+        if near {
+            away_since = None;
+            if !shown {
+                shown = true;
+                let _ = zone.show();
+                let _ = zone.set_always_on_top(true);
+                let _ = app.emit_to("island", "drag-near", json!({ "on": true }));
+            }
+        } else if shown {
+            let t = *away_since.get_or_insert_with(std::time::Instant::now);
+            if !drag || t.elapsed() > std::time::Duration::from_millis(350) {
+                shown = false;
+                away_since = None;
+                let _ = zone.hide();
+                let _ = app.emit_to("island", "drag-near", json!({ "on": false }));
+            }
+        }
+    }
+}
