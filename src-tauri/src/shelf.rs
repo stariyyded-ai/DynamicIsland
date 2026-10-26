@@ -160,95 +160,205 @@ pub fn drag_out(app: &AppHandle, paths: Vec<String>) {
 
 /* ------------------------------------------------------------ drop zone */
 
-// The island window lets the mouse through, and Windows doesn't reliably offer it file drops that way.
-// While a file is being dragged near the island, a plain invisible window sits on top of it and takes the drop.
+// The island window lets the mouse through, so Windows never offers it a dragged file.
+// While something is dragged near the island, a nearly transparent native window sits over it and takes the drop.
 
-const ZONE_W: f64 = 460.0;
-const ZONE_H: f64 = 130.0;
+use std::sync::atomic::{AtomicIsize, Ordering};
+use windows::core::{implement, Ref};
+use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, POINTL, WPARAM};
+use windows::Win32::System::Com::{IDataObject, DVASPECT_CONTENT, FORMATETC, TYMED_HGLOBAL};
+use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::System::Ole::{
+    IDropTarget, IDropTarget_Impl, OleInitialize, RegisterDragDrop, ReleaseStgMedium, CF_HDROP, DROPEFFECT,
+    DROPEFFECT_COPY, DROPEFFECT_LINK, DROPEFFECT_NONE,
+};
+use windows::Win32::System::SystemServices::MODIFIERKEYS_FLAGS;
+use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
+use windows::Win32::UI::Shell::{DragQueryFileW, HDROP};
+use windows::Win32::UI::WindowsAndMessaging::{
+    CreateWindowExW, DefWindowProcW, GetCursorPos, GetMessageW, DispatchMessageW, TranslateMessage, RegisterClassW,
+    SetLayeredWindowAttributes, SetWindowPos, ShowWindow, HWND_TOPMOST, LWA_ALPHA, MSG, SWP_NOACTIVATE,
+    SWP_SHOWWINDOW, SW_HIDE, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+};
 
-pub fn create_zone(app: &AppHandle) {
-    let built = tauri::WebviewWindowBuilder::new(app, "dropzone", tauri::WebviewUrl::App("dropzone.html".into()))
-        .title("Island drop")
-        .inner_size(ZONE_W, ZONE_H)
-        .decorations(false)
-        .transparent(true)
-        .shadow(false)
-        .resizable(false)
-        .always_on_top(true)
-        .skip_taskbar(true)
-        .focused(false)
-        .focusable(false)
-        .visible(false)
-        .build();
-    if let Err(e) = built {
-        crate::sys::log(&format!("shelf: drop zone failed: {}", e));
+const ZONE_W: f64 = 480.0;
+const ZONE_H: f64 = 140.0;
+static ZONE: AtomicIsize = AtomicIsize::new(0);
+
+fn pick_effect(e: *mut DROPEFFECT) {
+    unsafe {
+        if e.is_null() {
+            return;
+        }
+        let allowed = (*e).0;
+        // never MOVE: the file stays where it is, the shelf only remembers it
+        *e = if allowed & DROPEFFECT_COPY.0 != 0 {
+            DROPEFFECT_COPY
+        } else if allowed & DROPEFFECT_LINK.0 != 0 {
+            DROPEFFECT_LINK
+        } else {
+            DROPEFFECT_NONE
+        };
     }
 }
 
-fn dragging_now() -> bool {
-    use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
-    use windows::Win32::UI::WindowsAndMessaging::{FindWindowW, IsWindowVisible};
+fn paths_of(obj: &IDataObject) -> Vec<String> {
+    let mut out = Vec::new();
     unsafe {
-        if GetAsyncKeyState(VK_LBUTTON.0 as i32) as u16 & 0x8000 == 0 {
-            return false;
+        let fmt = FORMATETC { cfFormat: CF_HDROP.0, ptd: std::ptr::null_mut(), dwAspect: DVASPECT_CONTENT.0, lindex: -1, tymed: TYMED_HGLOBAL.0 as u32 };
+        let Ok(mut med) = obj.GetData(&fmt) else { return out };
+        let hdrop = HDROP(med.u.hGlobal.0);
+        let n = DragQueryFileW(hdrop, u32::MAX, None);
+        for i in 0..n {
+            let len = DragQueryFileW(hdrop, i, None) as usize;
+            let mut buf = vec![0u16; len + 1];
+            DragQueryFileW(hdrop, i, Some(&mut buf));
+            out.push(String::from_utf16_lossy(&buf[..len]));
         }
-        // Explorer and most apps show their drag picture in a window of this class
-        match FindWindowW(w!("SysDragImage"), PCWSTR::null()) {
-            Ok(h) if !h.0.is_null() => IsWindowVisible(h).as_bool(),
-            _ => false,
+        ReleaseStgMedium(&mut med);
+    }
+    out
+}
+
+#[implement(IDropTarget)]
+struct Catcher {
+    app: AppHandle,
+}
+
+impl IDropTarget_Impl for Catcher_Impl {
+    fn DragEnter(&self, _d: Ref<IDataObject>, _k: MODIFIERKEYS_FLAGS, _p: &POINTL, e: *mut DROPEFFECT) -> windows::core::Result<()> {
+        pick_effect(e);
+        let _ = self.app.emit_to("island", "drag-near", json!({ "on": true }));
+        Ok(())
+    }
+    fn DragOver(&self, _k: MODIFIERKEYS_FLAGS, _p: &POINTL, e: *mut DROPEFFECT) -> windows::core::Result<()> {
+        pick_effect(e);
+        Ok(())
+    }
+    fn DragLeave(&self) -> windows::core::Result<()> {
+        Ok(())
+    }
+    fn Drop(&self, d: Ref<IDataObject>, _k: MODIFIERKEYS_FLAGS, _p: &POINTL, e: *mut DROPEFFECT) -> windows::core::Result<()> {
+        pick_effect(e);
+        let paths = d.as_ref().map(paths_of).unwrap_or_default();
+        crate::sys::log(&format!("shelf: {} file(s) dropped", paths.len()));
+        hide_zone();
+        if !paths.is_empty() {
+            add(&self.app, paths);
+            let _ = self.app.emit_to("island", "shelf-dropped", json!({}));
+        }
+        Ok(())
+    }
+}
+
+unsafe extern "system" fn zone_proc(h: HWND, m: u32, w: WPARAM, l: LPARAM) -> LRESULT {
+    DefWindowProcW(h, m, w, l)
+}
+
+fn hide_zone() {
+    let h = ZONE.load(Ordering::SeqCst);
+    if h != 0 {
+        unsafe {
+            let _ = ShowWindow(HWND(h as _), SW_HIDE);
         }
     }
+}
+
+/// Owns the catcher window: OLE needs it on its own single-threaded thread with a message loop.
+fn zone_thread(app: AppHandle) {
+    unsafe {
+        if let Err(e) = OleInitialize(None) {
+            crate::sys::log(&format!("shelf: OleInitialize failed: {}", e));
+        }
+        let Ok(hinst) = GetModuleHandleW(None) else { return };
+        let wc = WNDCLASSW { lpfnWndProc: Some(zone_proc), hInstance: hinst.into(), lpszClassName: w!("IslandDropCatcher"), ..Default::default() };
+        RegisterClassW(&wc);
+        let hwnd = match CreateWindowExW(
+            WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+            w!("IslandDropCatcher"),
+            w!(""),
+            WS_POPUP,
+            0,
+            0,
+            10,
+            10,
+            None,
+            None,
+            Some(hinst.into()),
+            None,
+        ) {
+            Ok(h) => h,
+            Err(e) => {
+                crate::sys::log(&format!("shelf: drop window failed: {}", e));
+                return;
+            }
+        };
+        // alpha 1 of 255: invisible to the eye, but still a real target for the mouse and for drops
+        let _ = SetLayeredWindowAttributes(hwnd, COLORREF(0), 1, LWA_ALPHA);
+        let target: IDropTarget = Catcher { app }.into();
+        if let Err(e) = RegisterDragDrop(hwnd, &target) {
+            crate::sys::log(&format!("shelf: RegisterDragDrop failed: {}", e));
+            return;
+        }
+        ZONE.store(hwnd.0 as isize, Ordering::SeqCst);
+        let mut msg = MSG::default();
+        while GetMessageW(&mut msg, None, 0, 0).as_bool() {
+            let _ = TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+    }
+}
+
+pub fn create_zone(app: &AppHandle) {
+    let a = app.clone();
+    std::thread::spawn(move || zone_thread(a));
 }
 
 pub fn zone_loop(app: AppHandle) {
-    use windows::Win32::Foundation::POINT;
-    use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
     let mut shown = false;
-    let mut away_since: Option<std::time::Instant> = None;
-    let mut logged = false;
+    let mut was_down = false;
+    let mut started_inside = false;
+    let mut released_at: Option<std::time::Instant> = None;
     loop {
-        std::thread::sleep(std::time::Duration::from_millis(60));
-        let (Some(isl), Some(zone)) = (app.get_webview_window("island"), app.get_webview_window("dropzone")) else { continue };
-        let drag = dragging_now();
-        if drag && !logged {
-            logged = true;
-            crate::sys::log("shelf: file drag noticed");
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let h = ZONE.load(Ordering::SeqCst);
+        let Some(isl) = app.get_webview_window("island") else { continue };
+        if h == 0 {
+            continue;
         }
-        let mut near = false;
-        if drag && !crate::sys::FULL_NOW.load(std::sync::atomic::Ordering::SeqCst) {
-            if let (Ok(Some(m)), Ok(_)) = (isl.current_monitor(), isl.outer_position()) {
-                let mut pt = POINT::default();
-                if unsafe { GetCursorPos(&mut pt) }.is_ok() {
-                    let k = m.scale_factor();
-                    let cx = m.position().x as f64 + m.size().width as f64 / 2.0;
-                    let top = m.position().y as f64;
-                    let w = ZONE_W * k;
-                    let h = ZONE_H * k;
-                    // a generous catch area: the zone appears a bit before the cursor reaches the island
-                    near = (pt.x as f64 - cx).abs() < w / 2.0 + 60.0 * k && (pt.y as f64) < top + h + 80.0 * k && (pt.y as f64) >= top - 2.0;
-                    if near && !shown {
-                        let _ = zone.set_position(tauri::PhysicalPosition::new((cx - w / 2.0).round() as i32, top as i32));
-                        let _ = zone.set_size(tauri::PhysicalSize::new(w.round() as u32, h.round() as u32));
-                    }
-                }
-            }
+        let down = unsafe { GetAsyncKeyState(VK_LBUTTON.0 as i32) } as u16 & 0x8000 != 0;
+        let mut pt = POINT::default();
+        let _ = unsafe { GetCursorPos(&mut pt) };
+        let Ok(Some(m)) = isl.current_monitor() else { continue };
+        let k = m.scale_factor();
+        let cx = m.position().x as f64 + m.size().width as f64 / 2.0;
+        let top = m.position().y as f64;
+        let (w, hh) = (ZONE_W * k, ZONE_H * k);
+        let near = (pt.x as f64 - cx).abs() < w / 2.0 && (pt.y as f64) < top + hh && (pt.y as f64) >= top - 2.0;
+        if down && !was_down {
+            // a press that begins on the island is a click on it, not a drag from somewhere else
+            started_inside = near;
         }
-        if near {
-            away_since = None;
-            if !shown {
-                shown = true;
-                let _ = zone.show();
-                let _ = zone.set_always_on_top(true);
-                let _ = app.emit_to("island", "drag-near", json!({ "on": true }));
+        was_down = down;
+        let want = down && !started_inside && near && !crate::sys::FULL_NOW.load(Ordering::SeqCst);
+        if want && !shown {
+            shown = true;
+            released_at = None;
+            unsafe {
+                let _ = SetWindowPos(HWND(h as _), Some(HWND_TOPMOST), (cx - w / 2.0).round() as i32, top as i32, w.round() as i32, hh.round() as i32, SWP_NOACTIVATE | SWP_SHOWWINDOW);
             }
-        } else if shown {
-            let t = *away_since.get_or_insert_with(std::time::Instant::now);
-            if !drag || t.elapsed() > std::time::Duration::from_millis(350) {
+            // the island lights up only once a real file drag enters (DragEnter), not when a window is dragged past
+        } else if shown && !want {
+            // give the drop a moment to land before the window goes away
+            let t = *released_at.get_or_insert_with(std::time::Instant::now);
+            if t.elapsed() > std::time::Duration::from_millis(if down { 250 } else { 500 }) {
                 shown = false;
-                away_since = None;
-                let _ = zone.hide();
+                released_at = None;
+                hide_zone();
                 let _ = app.emit_to("island", "drag-near", json!({ "on": false }));
             }
+        } else if want {
+            released_at = None;
         }
     }
 }
