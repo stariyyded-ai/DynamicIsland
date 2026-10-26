@@ -1,0 +1,5 @@
+{
+  "identifier": "default",
+  "windows": ["island", "settings", "sticker-*"],
+  "permissions": ["core:default", "core:window:allow-start-dragging"]
+}

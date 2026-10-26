@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Настройки острова</title>
+<style>
+:root{
+  --bg:#f3f5f9; --fg:#121722; --muted:#5d6678; --line:#d5dbe6; --chip:#ffffff; --card:#ffffff; --on:#121722; --on-fg:#ffffff; --accent:#0067c0;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root{
+  --bg:#1b1d22; --fg:#e8ecf4; --muted:#8b93a5; --line:#30343e; --chip:#24272e; --card:#202329; --on:#e8ecf4; --on-fg:#16181c; --accent:#4cc2ff; color-scheme:dark}}
+html,body{margin:0;background:var(--bg);color:var(--fg);font-family:"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;font-size:14px}
+main{padding:22px 22px 28px;display:flex;flex-direction:column;gap:14px;max-width:560px;margin:0 auto}
+h1{margin:0;font-size:22px;font-weight:700;letter-spacing:-.01em}
+.sub{margin:2px 0 4px;color:var(--muted);font-size:13px;line-height:1.45}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:14px}
+.card h2{margin:0;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.set{display:flex;flex-direction:column;gap:7px}
+.lab{display:flex;justify-content:space-between;font-size:13px}
+.lab output{color:var(--muted);font-variant-numeric:tabular-nums}
+.seg{display:flex;flex-wrap:wrap;gap:6px}
+.seg button{font:inherit;font-size:13px;font-weight:500;color:var(--fg);background:var(--chip);border:1px solid var(--line);border-radius:999px;padding:6px 13px;cursor:pointer}
+.seg button:hover{border-color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--on);color:var(--on-fg);border-color:var(--on)}
+input[type=range]{width:100%;accent-color:var(--accent)}
+.sw-row{font:inherit;font-size:13px;display:flex;align-items:center;gap:10px;color:var(--fg);background:none;border:0;cursor:pointer;padding:2px 0;text-align:left}
+.sw{width:34px;height:20px;border-radius:10px;background:var(--line);position:relative;transition:background .2s;flex:none}
+.sw::after{content:"";position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:#fff;transition:transform .25s cubic-bezier(.3,1.4,.5,1)}
+[aria-pressed="true"] > .sw{background:var(--accent)}
+[aria-pressed="true"] > .sw::after{transform:translateX(14px)}
+.sw-row small{display:block;color:var(--muted);font-size:12px;margin-top:1px}
+.mods{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 14px}
+.mods label{display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer}
+.mods input{accent-color:var(--accent);width:16px;height:16px}
+.keys{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:13px;align-items:center}
+kbd{font:inherit;font-size:12px;font-weight:600;border:1px solid var(--line);border-radius:5px;padding:1px 6px;background:var(--chip);white-space:nowrap}
+.foot{color:var(--muted);font-size:12px;line-height:1.5}
+button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+</style>
+</head>
+<body>
+<main>
+  <div>
+    <h1>Остров</h1>
+    <p class="sub">Изменения применяются сразу. Остров можно открыть правой кнопкой мыши, а эти настройки — из меню острова или из значка в трее.</p>
+  </div>
+
+  <section class="card">
+    <h2>Вид</h2>
+    <div class="set"><div class="lab">Тема</div><div class="seg" data-key="theme"><button data-v="dark">Тёмная</button><button data-v="light">Светлая</button><button data-v="glass">Стекло</button></div></div>
+    <div class="set"><div class="lab">Размер</div><div class="seg" data-key="size"><button data-v="s">Компактный</button><button data-v="m">Обычный</button><button data-v="l">Крупный</button></div></div>
+    <div class="set"><label class="lab" for="op">Непрозрачность <output id="opOut"></output></label><input type="range" id="op" min="50" max="100" step="5"></div>
+    <div class="set"><label class="lab" for="top">Отступ сверху <output id="topOut"></output></label><input type="range" id="top" min="0" max="40" step="2"></div>
+    <div class="set"><div class="lab">Монитор</div><div class="seg" data-key="mon" id="mons"></div></div>
+  </section>
+
+  <section class="card">
+    <h2>Поведение</h2>
+    <button class="sw-row" data-flag="hideFull"><span class="sw"></span><span>Прятать в играх и полноэкранном видео</span></button>
+    <button class="sw-row" data-flag="dnd"><span class="sw"></span><span>Не беспокоить<small>Без всплывашек буфера, раскладки и завершённых загрузок</small></span></button>
+    <button class="sw-row" data-flag="osd"><span class="sw"></span><span>Громкость в острове вместо плашки Windows<small>Клавиши громкости показывают уровень в острове. В играх на весь экран работает обычная плашка</small></span></button>
+    <button class="sw-row" data-flag="notifyOther"><span class="sw"></span><span>Уведомления из других приложений<small>Telegram, почта и звонки показываются всегда, если модуль включён</small></span></button>
+    <button class="sw-row" data-flag="autostart"><span class="sw"></span><span>Запускать вместе с Windows</span></button>
+  </section>
+
+  <section class="card">
+    <h2>Модули</h2>
+    <div class="mods" id="mods"></div>
+  </section>
+
+  <section class="card">
+    <h2>Управление</h2>
+    <div class="keys">
+      <kbd>Win + Shift + N</kbd><span>Новая заметка, Enter превращает её в стикер</span>
+      <kbd>Win + Shift + V</kbd><span>Буфер обмена в острове</span>
+      <kbd>Колёсико</kbd><span>Громкость, если курсор над островом</span>
+      <kbd>Средняя кнопка</kbd><span>Пауза и воспроизведение</span>
+      <kbd>Правая кнопка</kbd><span>Меню острова: заметка, стикеры, «Не беспокоить»</span>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Обновления</h2>
+    <div class="set"><div class="lab"><span>Версия <b id="ver"></b></span><output id="updMsg"></output></div>
+      <div class="seg"><button type="button" id="updCheck">Проверить обновления</button><button type="button" id="updGo" hidden aria-pressed="true">Обновить</button></div>
+    </div>
+  </section>
+
+  <p class="foot">Остров · чтобы уведомления не дублировались, выключите баннеры для Telegram и почты в Параметры → Система → Уведомления, оставив их в центре уведомлений. Заметки и настройки хранятся в папке %APPDATA%\Island</p>
+</main>
+<script>
+(function(){
+  const TA = window.__TAURI__;
+  const invoke = (c, a) => TA ? TA.core.invoke(c, a) : Promise.resolve(null);
+  const $ = id => document.getElementById(id);
+  const MODS = [['music','Музыка и видео'],['volume','Громкость'],['brightness','Яркость'],['layout','Раскладка'],['notify','Уведомления'],['download','Загрузки'],['copy','Копирование файлов'],['clip','Буфер обмена'],['notes','Заметки']];
+  let s = {mods:{}};
+  $('mods').innerHTML = MODS.map(([k, n]) => '<label><input type="checkbox" data-m="' + k + '">' + n + '</label>').join('');
+
+  function draw(){
+    document.querySelectorAll('.seg[data-key]').forEach(seg => seg.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(s[seg.dataset.key]) === b.dataset.v)));
+    document.querySelectorAll('[data-flag]').forEach(b => b.setAttribute('aria-pressed', !!s[b.dataset.flag]));
+    document.querySelectorAll('[data-m]').forEach(c => c.checked = !!(s.mods || {})[c.dataset.m]);
+    $('op').value = s.op; $('opOut').textContent = s.op + '%';
+    $('top').value = s.top; $('topOut').textContent = s.top + ' px';
+  }
+  function save(patch){ Object.assign(s, patch); draw(); invoke('save_settings', {settings: patch}); }
+
+  document.addEventListener('click', e => {
+    const b = e.target.closest('.seg[data-key] button');
+    if (b){ const key = b.parentElement.dataset.key; save({[key]: key === 'mon' ? +b.dataset.v : b.dataset.v}); return; }
+    const f = e.target.closest('[data-flag]');
+    if (f) save({[f.dataset.flag]: !s[f.dataset.flag]});
+  });
+  $('mods').addEventListener('change', e => { const m = e.target.dataset.m; if (m) save({mods: {[m]: e.target.checked ? 1 : 0}}); });
+  $('op').addEventListener('input', e => save({op: +e.target.value}));
+  $('top').addEventListener('input', e => save({top: +e.target.value}));
+
+  invoke('monitors').then(list => {
+    list = list && list.length ? list : [{index:1}];
+    $('mons').innerHTML = list.map(m => '<button data-v="' + m.index + '">' + ('Монитор ' + m.index) + (m.w ? ' · ' + m.w + '×' + m.h : '') + '</button>').join('');
+    draw();
+  });
+  invoke('get_settings').then(v => { if (v){ s = v; draw(); } });
+  invoke('app_version').then(v => { if (v) $('ver').textContent = v; });
+  $('updCheck').onclick = async () => {
+    $('updMsg').textContent = 'Проверяю…';
+    const r = await invoke('update_check');
+    if (!r || !r.ok) $('updMsg').textContent = 'Не удалось проверить';
+    else if (r.available){ $('updMsg').textContent = 'Есть версия ' + r.latest; $('updGo').hidden = false; }
+    else $('updMsg').textContent = 'У вас последняя версия';
+  };
+  $('updGo').onclick = () => { $('updMsg').textContent = 'Загружаю…'; invoke('update_install'); };
+  if (TA) TA.event.listen('update-state', e => { if (e.payload.state === 'failed') $('updMsg').textContent = 'Не удалось обновиться'; });
+  if (TA) TA.event.listen('settings', e => { s = Object.assign(s, e.payload); draw(); });
+})();
+</script>
+</body>
+</html>

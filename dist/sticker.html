@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Стикер</title>
+<style>
+:root{--paper:#fff3a8;--edge:#e9d873;--ink:#24211a;--dim:rgba(36,33,26,.55);--hover:rgba(36,33,26,.08)}
+body[data-c="green"]{--paper:#d4f5cf;--edge:#a9dca2}
+body[data-c="blue"]{--paper:#d6e9ff;--edge:#a8c9f0}
+body[data-c="pink"]{--paper:#ffd9e6;--edge:#f0aec4}
+body[data-c="gray"]{--paper:#2b2e35;--edge:#3d414b;--ink:#eef0f4;--dim:rgba(238,240,244,.55);--hover:rgba(255,255,255,.08)}
+html,body{margin:0;background:transparent;overflow:hidden;font-family:"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;color:var(--ink)}
+.card{margin:8px;background:var(--paper);border-radius:12px;box-shadow:0 6px 18px rgba(0,0,0,.28),inset 0 0 0 1px var(--edge);display:flex;flex-direction:column;overflow:hidden;transition:background .25s}
+.bar{display:flex;align-items:center;gap:2px;padding:6px 6px 2px 12px;cursor:grab;user-select:none;-webkit-user-select:none;min-height:28px}
+body.locked .bar{cursor:default}
+.prog{font-size:12px;font-weight:600;color:var(--dim);display:flex;align-items:center;gap:6px;pointer-events:none}
+.prog.all{color:#1f9d4c}
+.grip{flex:1;align-self:stretch;min-width:10px}
+.ib{width:28px;height:28px;border-radius:8px;border:0;background:none;color:var(--dim);display:grid;place-items:center;cursor:pointer;padding:0}
+.ib:hover{background:var(--hover);color:var(--ink)}
+.ib svg{width:15px;height:15px}
+.ib.on{color:var(--ink);background:var(--hover)}
+.dot{width:14px;height:14px;border-radius:50%;background:var(--paper);box-shadow:inset 0 0 0 1.5px var(--dim)}
+.list{display:flex;flex-direction:column;padding:2px 8px 4px}
+.it{display:flex;align-items:flex-start;gap:6px;border-radius:8px;padding:1px 2px}
+.it:focus-within{background:var(--hover)}
+.ck{flex:none;width:28px;height:28px;border:0;background:none;padding:0;display:grid;place-items:center;cursor:pointer;border-radius:8px}
+.ck i{width:17px;height:17px;border-radius:50%;border:1.8px solid var(--dim);box-sizing:border-box;display:grid;place-items:center;transition:background .2s,border-color .2s}
+.ck i svg{width:10px;height:10px;opacity:0;transition:opacity .2s}
+.it.done .ck i{background:#30d158;border-color:#30d158}
+.it.done .ck i svg{opacity:1}
+.it textarea{flex:1;min-width:0;display:block;box-sizing:border-box;border:0;outline:none;resize:none;background:none;color:var(--ink);font:inherit;font-size:14px;line-height:1.45;padding:4px 4px 4px 0;overflow:hidden;white-space:pre-wrap;overflow-wrap:anywhere;height:28px}
+.it textarea::placeholder{color:var(--dim)}
+.it.done textarea{text-decoration:line-through;text-decoration-color:var(--dim);opacity:.55}
+.al{flex:none;height:28px;min-width:26px;border:0;background:none;color:var(--dim);border-radius:8px;display:flex;align-items:center;justify-content:center;gap:4px;cursor:pointer;opacity:0;padding:0 4px;font:inherit;font-size:11px;font-weight:600;white-space:nowrap}
+.it:hover .al,.it:focus-within .al,.al.set,.al.open{opacity:1}
+.al:hover,.al.open{background:var(--hover);color:var(--ink)}
+.al svg{width:14px;height:14px;flex:none}
+.al.set{color:var(--ink)}
+.al.late{color:#d9342b}
+.it.done .al.set{opacity:.5}
+.rem{display:none;flex-wrap:wrap;gap:6px;padding:2px 6px 8px 34px}
+.rem.on{display:flex}
+.rem button{font:inherit;font-size:12px;border:0;border-radius:8px;padding:4px 9px;background:var(--hover);color:var(--ink);cursor:pointer}
+.rem button:hover{box-shadow:inset 0 0 0 1px var(--dim)}
+.rem input{font:inherit;font-size:12px;border:0;border-radius:8px;padding:3px 6px;background:var(--hover);color:var(--ink);color-scheme:light}
+body[data-c="gray"] .rem input{color-scheme:dark}
+.add{display:flex;align-items:center;gap:6px;font:inherit;font-size:13px;color:var(--dim);background:none;border:0;border-radius:8px;padding:4px 6px;margin:0 8px 8px;cursor:pointer;text-align:left}
+.add:hover{background:var(--hover);color:var(--ink)}
+.add svg{width:16px;height:16px;margin:0 6px 0 5px}
+.ask{display:none;align-items:center;gap:6px;padding:0 10px 10px;font-size:12px;color:var(--dim)}
+.ask.on{display:flex}
+.ask span{flex:1}
+.ask button{font:inherit;font-size:12px;font-weight:600;border:0;border-radius:8px;padding:4px 10px;cursor:pointer;background:var(--hover);color:var(--ink)}
+.ask button.del{background:#ff453a;color:#fff}
+.colors{display:none;gap:6px;padding:0 12px 8px}
+.colors.on{display:flex}
+.colors button{width:20px;height:20px;border-radius:50%;border:0;cursor:pointer;box-shadow:inset 0 0 0 1px rgba(0,0,0,.15)}
+button:focus-visible{outline:2px solid #2f7cf6;outline-offset:1px}
+</style>
+</head>
+<body data-c="yellow">
+<div class="card" id="card">
+  <div class="bar" id="bar" data-tauri-drag-region>
+    <span class="prog" id="prog"></span>
+    <div class="grip" id="grip" data-tauri-drag-region></div>
+    <button type="button" class="ib" id="color" title="Цвет"><span class="dot"></span></button>
+    <button type="button" class="ib" id="pin" title="Закрепить на месте"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4h6l-1 5 3 3H7l3-3zM12 12v8"/></svg></button>
+    <button type="button" class="ib" id="close" title="Удалить стикер"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M7 7l10 10M17 7 7 17"/></svg></button>
+  </div>
+  <div class="colors" id="colors">
+    <button type="button" data-c="yellow" style="background:#fff3a8" aria-label="Жёлтый"></button>
+    <button type="button" data-c="green" style="background:#d4f5cf" aria-label="Зелёный"></button>
+    <button type="button" data-c="blue" style="background:#d6e9ff" aria-label="Голубой"></button>
+    <button type="button" data-c="pink" style="background:#ffd9e6" aria-label="Розовый"></button>
+    <button type="button" data-c="gray" style="background:#2b2e35" aria-label="Тёмный"></button>
+  </div>
+  <div class="list" id="list"></div>
+  <button type="button" class="add" id="add"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Добавить задачу</button>
+  <div class="ask" id="ask"><span>Удалить стикер?</span><button type="button" id="no">Нет</button><button type="button" class="del" id="yes">Удалить</button></div>
+</div>
+<script>
+(function(){
+  const TA = window.__TAURI__;
+  const invoke = (c, a) => TA ? TA.core.invoke(c, a).catch(e => console.warn(c, e)) : Promise.resolve(null);
+  const $ = id => document.getElementById(id);
+  const id = +new URLSearchParams(location.search).get('id');
+  const CHECK = '<i><svg viewBox="0 0 12 12"><path d="m2.5 6.3 2.3 2.3 4.7-5" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></i>';
+  let st = {items:[{text:'', done:false}], locked:false, color:'yellow'}, lastH = 0, saveT = null;
+
+  function grow(t){ t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px'; }
+  function fit(){
+    const h = Math.ceil($('card').offsetHeight + 16);
+    if (Math.abs(h - lastH) > 1){ lastH = h; invoke('sticker_resize', {id, h}); }
+  }
+  function save(){ clearTimeout(saveT); saveT = setTimeout(() => invoke('sticker_update', {id, patch:{items: st.items}}), 300); }
+  function drawProg(){
+    const real = st.items.filter(i => i.text.trim());
+    const done = real.filter(i => i.done).length;
+    const p = $('prog');
+    p.classList.toggle('all', real.length > 0 && done === real.length);
+    p.textContent = !real.length ? 'Новая заметка' : done === real.length ? (real.length > 1 ? 'Всё выполнено' : 'Выполнено') : real.length > 1 ? 'Выполнено ' + done + ' из ' + real.length : 'Не выполнено';
+  }
+  function drawHead(){
+    document.body.classList.toggle('locked', !!st.locked);
+    // a pinned sticker loses its drag handles, so it stays exactly where it is
+    ['bar', 'grip'].forEach(k => st.locked ? $(k).removeAttribute('data-tauri-drag-region') : $(k).setAttribute('data-tauri-drag-region', ''));
+    $('pin').classList.toggle('on', !!st.locked);
+    $('pin').title = st.locked ? 'Открепить, чтобы двигать' : 'Закрепить на месте';
+    document.body.dataset.c = st.color || 'yellow';
+  }
+  const BELL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="7.5"/><path d="M12 9.5V13l2.3 1.8M5 4 2.5 6.5M19 4l2.5 2.5"/></svg>';
+  const pad = n => String(n).padStart(2, '0');
+  function fmtAt(ms){
+    const d = new Date(ms), now = new Date(), t = d.getHours() + ':' + pad(d.getMinutes());
+    const day = x => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+    const diff = Math.round((day(d) - day(now)) / 864e5);
+    return diff === 0 ? t : diff === 1 ? 'завтра ' + t : diff === -1 ? 'вчера ' + t : pad(d.getDate()) + '.' + pad(d.getMonth() + 1) + ' ' + t;
+  }
+  function drawAl(b, it){
+    const late = it.at && it.at < Date.now() && !it.done;
+    b.className = 'al' + (it.at ? ' set' : '') + (late ? ' late' : '');
+    b.innerHTML = BELL + (it.at ? '<span>' + fmtAt(it.at) + '</span>' : '');
+    b.title = it.at ? 'Напоминание: ' + new Date(it.at).toLocaleString('ru-RU', {day:'numeric', month:'long', hour:'2-digit', minute:'2-digit'}) : 'Напомнить';
+  }
+  function remMenu(box, it, b){
+    const now = new Date(), opts = [];
+    opts.push(['Через 15 минут', Date.now() + 15*6e4]);
+    opts.push(['Через час', Date.now() + 60*6e4]);
+    const eve = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 18, 0);
+    if (eve - now > 30*6e4) opts.push(['Сегодня в 18:00', eve.getTime()]);
+    opts.push(['Завтра в 9:00', new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 9, 0).getTime()]);
+    const local = ms => { const d = new Date(ms); return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes()); };
+    box.innerHTML = opts.map((o, k) => '<button type="button" data-k="' + k + '">' + o[0] + '</button>').join('') +
+      '<input type="datetime-local" aria-label="Дата и время" value="' + local(it.at || Date.now() + 60*6e4) + '">' + (it.at ? '<button type="button" data-k="off">Убрать</button>' : '');
+    const set = ms => { it.at = ms; it.fired = false; drawAl(b, it); box.classList.remove('on'); b.classList.remove('open'); fit(); save(); };
+    box.onclick = e => { const x = e.target.closest('button[data-k]'); if (!x) return; set(x.dataset.k === 'off' ? null : opts[+x.dataset.k][1]); };
+    box.querySelector('input').onchange = e => { const v = new Date(e.target.value).getTime(); if (v) set(v); };
+  }
+  function row(it, k){
+    const wrap = document.createElement('div');
+    const d = document.createElement('div'); wrap.appendChild(d);
+    d.className = 'it' + (it.done ? ' done' : '');
+    d.innerHTML = '<button type="button" class="ck" aria-label="Отметить выполненной">' + CHECK + '</button><textarea rows="1" spellcheck="true" placeholder="Задача"></textarea><button type="button" class="al"></button>';
+    const box = document.createElement('div'); box.className = 'rem'; wrap.appendChild(box);
+    const al = d.querySelector('.al'); drawAl(al, it);
+    al.onclick = () => {
+      const open = !box.classList.contains('on');
+      document.querySelectorAll('.rem.on').forEach(x => x.classList.remove('on')); document.querySelectorAll('.al.open').forEach(x => x.classList.remove('open'));
+      if (open){ remMenu(box, it, al); box.classList.add('on'); al.classList.add('open'); }
+      fit();
+    };
+    const t = d.querySelector('textarea'); t.value = it.text;
+    d.querySelector('.ck').onclick = () => { it.done = !it.done; d.classList.toggle('done', it.done); drawAl(al, it); drawProg(); save(); };
+    t.addEventListener('input', () => { it.text = t.value; grow(t); fit(); drawProg(); save(); });
+    t.addEventListener('keydown', e => {
+      const i = st.items.indexOf(it);
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing){
+        e.preventDefault();
+        // Enter in the middle of a task splits it into two
+        const pos = t.selectionStart, rest = t.value.slice(t.selectionEnd);
+        it.text = t.value.slice(0, pos);
+        st.items.splice(i + 1, 0, {text: rest, done:false, at:null, fired:false});
+        drawList(i + 1, 0); save();
+      } else if (e.key === 'Backspace' && t.selectionStart === 0 && t.selectionEnd === 0 && i > 0){
+        e.preventDefault();
+        const prev = st.items[i - 1], at = prev.text.length;
+        prev.text += it.text; st.items.splice(i, 1);
+        drawList(i - 1, at); save();
+      } else if (e.key === 'ArrowUp' && t.selectionStart === 0 && i > 0){ e.preventDefault(); focusAt(i - 1, null); }
+      else if (e.key === 'ArrowDown' && t.selectionEnd === t.value.length && i < st.items.length - 1){ e.preventDefault(); focusAt(i + 1, 0); }
+    });
+    return wrap;
+  }
+  function focusAt(i, pos){
+    const t = $('list').querySelectorAll('textarea')[i]; if (!t) return;
+    t.focus(); const p = pos == null ? t.value.length : pos; t.setSelectionRange(p, p);
+  }
+  function drawList(focus, pos){
+    if (!st.items.length) st.items.push({text:'', done:false});
+    const l = $('list'); l.innerHTML = '';
+    st.items.forEach((it, k) => l.appendChild(row(it, k)));
+    l.querySelectorAll('textarea').forEach(grow);
+    drawProg(); fit();
+    if (focus != null) focusAt(focus, pos);
+  }
+
+  $('add').onclick = () => {
+    const last = st.items[st.items.length - 1];
+    if (last && !last.text.trim()) return focusAt(st.items.length - 1, 0);
+    st.items.push({text:'', done:false, at:null, fired:false}); drawList(st.items.length - 1, 0); save();
+  };
+  $('pin').onclick = () => { st.locked = !st.locked; drawHead(); invoke('sticker_update', {id, patch:{locked: st.locked}}); };
+  $('color').onclick = () => { $('colors').classList.toggle('on'); fit(); };
+  $('colors').onclick = e => { const b = e.target.closest('[data-c]'); if (!b) return; st.color = b.dataset.c; drawHead(); invoke('sticker_update', {id, patch:{color: st.color}}); $('colors').classList.remove('on'); fit(); };
+  $('close').onclick = () => { $('ask').classList.add('on'); fit(); };
+  $('no').onclick = () => { $('ask').classList.remove('on'); fit(); };
+  $('yes').onclick = () => invoke('sticker_delete', {id});
+  document.addEventListener('keydown', e => { if (e.key === 'Escape'){ $('ask').classList.remove('on'); $('colors').classList.remove('on'); fit(); } });
+  document.addEventListener('contextmenu', e => { if (!e.target.matches('textarea')) e.preventDefault(); });
+
+  // the app changes a sticker too: a reminder went off, or «Выполнено» was pressed in the island
+  if (TA) TA.event.listen('sticker-changed', e => {
+    const p = e.payload; if (!p || p.id !== id) return;
+    const editing = document.activeElement && document.activeElement.matches('textarea');
+    if (editing && p.items.length === st.items.length){
+      p.items.forEach((x, i) => Object.assign(st.items[i], {done: x.done, at: x.at, fired: x.fired}));
+      document.querySelectorAll('.it').forEach((d, i) => { d.classList.toggle('done', !!st.items[i].done); drawAl(d.querySelector('.al'), st.items[i]); });
+      drawProg();
+    } else { st.items = p.items; drawList(); }
+  });
+  setInterval(() => document.querySelectorAll('.it').forEach((d, i) => st.items[i] && drawAl(d.querySelector('.al'), st.items[i])), 30000);
+
+  invoke('sticker_get', {id}).then(s => {
+    if (s){ st = s; if (!Array.isArray(st.items)) st.items = []; }
+    drawHead(); drawList();
+  });
+  drawHead(); drawList();
+})();
+</script>
+</body>
+</html>
