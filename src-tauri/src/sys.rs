@@ -10,14 +10,15 @@ use std::thread::sleep;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 
-use windows::core::{BSTR, PCWSTR, w};
+use windows::core::{BSTR, PCWSTR, PWSTR, w};
 use windows::Media::Control::{
     GlobalSystemMediaTransportControlsSession as Session,
     GlobalSystemMediaTransportControlsSessionManager as SessionManager,
     GlobalSystemMediaTransportControlsSessionPlaybackStatus as PlaybackStatus,
 };
 use windows::Storage::Streams::DataReader;
-use windows::Win32::Foundation::{HANDLE, HGLOBAL, HWND, POINT, RECT};
+use windows::Win32::Foundation::{CloseHandle, HANDLE, HGLOBAL, HWND, POINT, RECT};
+use windows::Win32::System::Threading::{OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION};
 use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
 use windows::Win32::Media::Audio::{eConsole, eRender, IMMDeviceEnumerator, MMDeviceEnumerator};
 use windows::Win32::System::Com::{
@@ -45,7 +46,7 @@ use windows::Win32::UI::Shell::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     GetClassNameW, GetCursorPos, GetForegroundWindow, GetMessageW, GetWindowRect,
-    GetWindowThreadProcessId, GetWindowLongW, GWL_STYLE, WS_CAPTION, MB_ICONASTERISK, MSG, WM_HOTKEY,
+    GetWindowThreadProcessId, GetWindowLongW, IsIconic, GWL_STYLE, WS_CAPTION, MB_ICONASTERISK, MSG, WM_HOTKEY,
 };
 use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
 use windows::Win32::Globalization::{GetLocaleInfoW, LOCALE_SABBREVLANGNAME};
@@ -649,6 +650,61 @@ fn downloads_loop(app: AppHandle) {
 pub static HIDE_FULL: AtomicBool = AtomicBool::new(true);
 pub static USER_HIDDEN: AtomicBool = AtomicBool::new(false);
 pub static FULL_NOW: AtomicBool = AtomicBool::new(false);
+pub static SLIM_BROWSER: AtomicBool = AtomicBool::new(true);
+pub static SLIM_NOW: AtomicBool = AtomicBool::new(false);
+
+const BROWSERS: &[&str] = &[
+    "chrome.exe", "msedge.exe", "firefox.exe", "opera.exe", "opera_gx.exe", "brave.exe", "browser.exe",
+    "vivaldi.exe", "arc.exe", "yandex.exe", "chromium.exe", "librewolf.exe", "waterfox.exe", "zen.exe", "thorium.exe",
+];
+
+fn exe_name(pid: u32) -> Option<String> {
+    unsafe {
+        let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
+        let mut buf = [0u16; 520];
+        let mut n = buf.len() as u32;
+        let ok = QueryFullProcessImageNameW(h, PROCESS_NAME_WIN32, PWSTR(buf.as_mut_ptr()), &mut n).is_ok();
+        let _ = CloseHandle(h);
+        if !ok {
+            return None;
+        }
+        let path = String::from_utf16_lossy(&buf[..n as usize]);
+        path.rsplit('\\').next().map(|s| s.to_lowercase())
+    }
+}
+
+/// Some(true) when a browser window reaches the top of the island's monitor, so its tabs sit under the island.
+/// None when the island itself (or a sticker) has focus, so the current mode is kept.
+unsafe fn browser_under_island(island: HWND) -> Option<bool> {
+    let hwnd = GetForegroundWindow();
+    if hwnd.0.is_null() {
+        return Some(false);
+    }
+    let mut pid = 0u32;
+    GetWindowThreadProcessId(hwnd, Some(&mut pid));
+    if pid == std::process::id() {
+        return None;
+    }
+    if IsIconic(hwnd).as_bool() {
+        return Some(false);
+    }
+    let Some(name) = exe_name(pid) else { return Some(false) };
+    if !BROWSERS.contains(&name.as_str()) {
+        return Some(false);
+    }
+    let mon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+    if mon != MonitorFromWindow(island, MONITOR_DEFAULTTONEAREST) {
+        return Some(false);
+    }
+    let mut mi = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
+    let mut r = RECT::default();
+    if !GetMonitorInfoW(mon, &mut mi).as_bool() || GetWindowRect(hwnd, &mut r).is_err() {
+        return Some(false);
+    }
+    let w = mi.rcWork;
+    let cx = (mi.rcMonitor.left + mi.rcMonitor.right) / 2;
+    Some(r.top <= w.top + 60 && r.left < cx - 60 && r.right > cx + 60)
+}
 
 unsafe fn foreground_is_fullscreen() -> bool {
     let hwnd = GetForegroundWindow();
@@ -686,7 +742,19 @@ unsafe fn foreground_is_fullscreen() -> bool {
 
 fn fullscreen_loop(app: AppHandle) {
     let mut last = false;
+    let mut slim = false;
+    let mut first = true;
     loop {
+        let island = app.get_webview_window("island").and_then(|w| w.hwnd().ok());
+        if let Some(h) = island {
+            let want = SLIM_BROWSER.load(Ordering::SeqCst) && unsafe { browser_under_island(HWND(h.0)) }.unwrap_or(slim);
+            if want != slim || first {
+                first = false;
+                slim = want;
+                SLIM_NOW.store(slim, Ordering::SeqCst);
+                emit(&app, "slim", json!({ "on": slim }));
+            }
+        }
         let st = unsafe { SHQueryUserNotificationState() }.unwrap_or_default();
         let full = st == QUNS_BUSY || st == QUNS_RUNNING_D3D_FULL_SCREEN || st == QUNS_PRESENTATION_MODE
             || unsafe { foreground_is_fullscreen() };

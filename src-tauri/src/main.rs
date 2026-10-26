@@ -40,7 +40,7 @@ fn data_dir() -> PathBuf {
 fn default_settings() -> Value {
     json!({
         "theme": "dark", "size": "m", "op": 100, "top": 8, "mon": 1,
-        "hideFull": true, "dnd": false, "osd": true, "notifyOther": true,
+        "hideFull": true, "dnd": false, "osd": true, "notifyOther": true, "slimBrowser": true,
         "mods": { "music": 1, "volume": 1, "brightness": 1, "layout": 1, "download": 1,
                   "clip": 1, "notes": 1, "notify": 1, "copy": 1 }
     })
@@ -167,6 +167,7 @@ fn open_settings(app: &AppHandle) {
 
 fn apply_flags(s: &Value) {
     sys::HIDE_FULL.store(s["hideFull"].as_bool().unwrap_or(true), Ordering::SeqCst);
+    sys::SLIM_BROWSER.store(s["slimBrowser"].as_bool().unwrap_or(true), Ordering::SeqCst);
     let m = &s["mods"]["volume"];
     let vol_on = !(m == &json!(0) || m == &json!(false));
     extra::REPLACE_OSD.store(vol_on && s["osd"].as_bool().unwrap_or(true), Ordering::SeqCst);
@@ -216,6 +217,11 @@ async fn monitors(app: AppHandle) -> Value {
 #[tauri::command]
 async fn set_hit(rects: Vec<sys::HitRect>) {
     *sys::HIT.lock().unwrap() = rects;
+}
+
+#[tauri::command]
+fn slim_state() -> bool {
+    sys::SLIM_NOW.load(Ordering::SeqCst)
 }
 
 #[tauri::command]
@@ -371,7 +377,7 @@ fn main() {
 
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
-            get_settings, save_settings, monitors, set_hit, set_solid, media_cmd, set_volume,
+            get_settings, save_settings, monitors, set_hit, set_solid, slim_state, media_cmd, set_volume,
             clip_list, clip_set, note_load, note_save, open_settings_cmd, notif_open, notif_act, copy_show,
             sticker_create, sticker_get, sticker_update, sticker_resize, sticker_delete, stickers_show_all, stickers_count, reminder_action,
             shelf_list, shelf_add, shelf_remove, shelf_clear, shelf_open, shelf_drag,

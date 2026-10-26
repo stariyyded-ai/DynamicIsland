@@ -15,7 +15,9 @@ textarea{user-select:text;-webkit-user-select:text}
 .isl-root.t-glass{--i-bg:#1c2233; --i-fg:#ffffff; --i-dim:rgba(255,255,255,.7); --i-soft:rgba(255,255,255,.2); --i-soft2:rgba(255,255,255,.1); --i-rim:rgba(255,255,255,.3)}
 .isl-root.t-glass{--glass-op:.62}
 .isl-root.hidden{transform:translateY(-130px);opacity:0}
-.island{position:absolute;left:50%;top:var(--top,8px);transform-origin:50% 0;cursor:default;outline:none}
+.island{position:absolute;left:50%;top:var(--top,8px);transform-origin:50% 0;cursor:default;outline:none;transition:top .3s cubic-bezier(.2,.9,.3,1.1)}
+.isl-root.slim .island{top:1px}
+.isl-root.slim .shape{filter:drop-shadow(0 1px 3px rgba(0,0,0,.35))}
 .shape{position:absolute;left:0;top:0;overflow:visible;filter:drop-shadow(0 8px 14px rgba(0,0,0,.4));pointer-events:none}
 #shapePath{fill:var(--i-bg);fill-opacity:calc(var(--i-op) * var(--glass-op,1))}
 #rimPath{stroke:var(--i-rim)}
@@ -217,6 +219,7 @@ textarea{user-select:text;-webkit-user-select:text}
       <div id="ripples"></div>
 
       <div class="panel" data-s="idle"><div class="pill-in c" id="idleIn"></div></div>
+      <div class="panel" data-s="line"></div>
 
       <div class="panel" data-s="welcome"><div class="pill-in c" style="font-weight:500;font-size:12px"><span>Остров запущен. Правая кнопка открывает меню</span></div></div>
 
@@ -367,6 +370,7 @@ textarea{user-select:text;-webkit-user-select:text}
 
   const S = {
     idle:      {w:150,h:34, r:17},
+    line:      {w:120,h:5,  r:3},
     welcome:   {w:360,h:38, r:19},
     musicMini: {w:290,h:36, r:18},
     music:     {w:460,h:182,r:42},
@@ -401,7 +405,7 @@ textarea{user-select:text;-webkit-user-select:text}
   let set = {theme:'dark', size:'m', op:100, top:8, hideFull:true, dnd:false, mods:{music:1,volume:1,brightness:1,layout:1,download:1,clip:1,notes:1,notify:1,copy:1}, notifyOther:true};
   let media = null, mediaPos = 0, mediaAt = 0, lastPlayingAt = 0, covers = {};
   let vol = {v:0, muted:false}, shelf = [], dl = null, clips = [];
-  let expanded = null, trans = null, cur = 'idle', hidden = false;
+  let expanded = null, trans = null, cur = 'idle', hidden = false, slim = false, peek = false, peekT = null;
   const mod = k => !!(set.mods && set.mods[k]);
 
   /* ---------- spring + water shape ---------- */
@@ -425,7 +429,7 @@ textarea{user-select:text;-webkit-user-select:text}
   function poke(e, idx, amt, spread){ for (let i=0;i<N;i++){ const d = (i-idx)/spread; e.v[i] += amt*Math.exp(-d*d); } }
   const taper = i => Math.pow(Math.max(0, Math.sin(Math.PI*i/(N-1))), .7);
   function buildPath(w, h, r){
-    r = Math.max(8, Math.min(r, h/2, w/2));
+    r = Math.max(2, Math.min(r, h/2, w/2));
     const x0 = r, x1 = w - r, f = n => n.toFixed(2);
     let d = 'M' + f(x0) + ' ' + f(-top.y[0]*taper(0));
     for (let i=1;i<N;i++){ d += 'L' + f(x0 + (x1-x0)*i/(N-1)) + ' ' + f(-top.y[i]*taper(i)); }
@@ -440,7 +444,7 @@ textarea{user-select:text;-webkit-user-select:text}
   function frame(now){
     let dt = Math.min(.05, (now - last)/1000); last = now;
     const steps = 6; dt /= steps;
-    const w = sp.w.x, r = Math.min(sp.r.x, Math.max(20, sp.h.x)/2);
+    const w = sp.w.x, r = Math.max(2, Math.min(sp.r.x, Math.max(3, sp.h.x)/2));
     if (hover && mouse && compact() && !reduce){
       const idx = (mouse.x - r)/(w - 2*r)*(N-1);
       for (let i=0;i<N;i++){ const d = (i-idx)/5; const b = 3.2*Math.exp(-d*d); top.rest[i] = b; bot.rest[i] = b; }
@@ -451,7 +455,7 @@ textarea{user-select:text;-webkit-user-select:text}
       if (!reduce){ waterStep(top, dt); waterStep(bot, dt); }
     }
     const k = SIZE[set.size] || 1;
-    const W = sp.w.x, H = Math.max(20, sp.h.x), R = Math.max(10, Math.min(sp.r.x, H/2));
+    const W = sp.w.x, H = Math.max(3, sp.h.x), R = Math.max(2, Math.min(sp.r.x, H/2));
     island.style.width = W + 'px'; island.style.height = H + 'px';
     island.style.transform = 'translateX(calc(-50% + ' + sp.dx.x.toFixed(2) + 'px)) scale(' + k + ')';
     shape.setAttribute('width', W); shape.setAttribute('height', H);
@@ -474,6 +478,8 @@ textarea{user-select:text;-webkit-user-select:text}
     if (!hidden){
       const add = (el, pad) => { const r = el.getBoundingClientRect(); if (r.width > 1) rects.push({x:r.left - pad, y:r.top - pad, w:r.width + pad*2, h:r.height + pad*2}); };
       add(island, 8);
+      // the thin line also listens a little around itself, so the top edge of the screen is enough to wake it
+      if (cur === 'line'){ const r = island.getBoundingClientRect(); rects.push({x:r.left - 50, y:0, w:r.width + 100, h:10}); }
       if (bubble.style.visibility === 'visible') add(bubble, 4);
       if (menuOpen) add($('cmenu'), 4);
     }
@@ -517,7 +523,17 @@ textarea{user-select:text;-webkit-user-select:text}
     const now = performance.now();
     if (s2 > 1.5 && now - lastRip > 140){ lastRip = now; ripple(mouse.x, mouse.y); }
   });
-  listen('cursor', p => { if (!p.inside) leave(); });
+  listen('cursor', p => { if (!p.inside){ leave(); unpeek(); } });
+
+  /* ---------- browser in front: shrink to a line, open again near the top edge ---------- */
+  function unpeek(){
+    if (!peek) return;
+    clearTimeout(peekT);
+    peekT = setTimeout(() => { if (!hover && !typing() && !menuOpen && !dragging){ peek = false; render(); } }, 600);
+  }
+  window.addEventListener('pointermove', () => { if (slim && !peek){ peek = true; render(); kick(40); } clearTimeout(peekT); });
+  listen('slim', p => { slim = !!p.on; if (!slim) peek = false; render(); });
+  invoke('slim_state').then(v => { slim = !!v; render(); });
   const typing = () => document.activeElement && document.activeElement.matches('textarea,input');
 
   /* ---------- which state to show ---------- */
@@ -531,14 +547,16 @@ textarea{user-select:text;-webkit-user-select:text}
   }
   function baseState(){
     const a = activities();
-    bubbleKind = a[1] || null;
+    bubbleKind = (slim && !peek) ? null : (a[1] || null);
     return ({music:'musicMini', download:'dlMini', copy:'copyMini'})[a[0]] || 'idle';
   }
   function render(){
     if (trans && (hover || typing()) && (trans.name === 'notif' || trans.name === 'call' || trans.name === 'remind')) trans.until = Math.max(trans.until, Date.now() + 1200);
     if (trans && trans.until < Date.now()){ trans = null; if (nq.length) return showNext(); }
     const base = baseState();
-    const name = (trans && trans.name) || expanded || base;
+    let name = (trans && trans.name) || expanded || base;
+    if (slim && !peek && !trans && !expanded && !hover && !menuOpen) name = 'line';
+    islRoot.classList.toggle('slim', name === 'line');
     if (name !== cur){
       panels[cur].classList.remove('on');
       cur = name; panels[cur].classList.add('on');
