@@ -40,7 +40,7 @@ fn data_dir() -> PathBuf {
 fn default_settings() -> Value {
     json!({
         "theme": "dark", "size": "m", "op": 100, "top": 8, "mon": 1,
-        "hideFull": true, "dnd": false, "osd": true, "notifyOther": true, "slimBrowser": true,
+        "hideFull": true, "dnd": false, "osd": true, "notifyOther": true, "slimBrowser": true, "fx": true,
         "mods": { "music": 1, "volume": 1, "brightness": 1, "layout": 1, "download": 1,
                   "clip": 1, "notes": 1, "notify": 1, "copy": 1 }
     })
@@ -165,8 +165,18 @@ fn open_settings(app: &AppHandle) {
         .build();
 }
 
+/// 0 hide, 1 thin line, 2 keep showing. Older settings only had the hideFull switch.
+fn full_mode(s: &Value) -> u8 {
+    match s["fullMode"].as_str() {
+        Some("line") => 1,
+        Some("show") => 2,
+        Some(_) => 0,
+        None => if s["hideFull"].as_bool().unwrap_or(true) { 0 } else { 2 },
+    }
+}
+
 fn apply_flags(s: &Value) {
-    sys::HIDE_FULL.store(s["hideFull"].as_bool().unwrap_or(true), Ordering::SeqCst);
+    sys::FULL_MODE.store(full_mode(s), Ordering::SeqCst);
     sys::SLIM_BROWSER.store(s["slimBrowser"].as_bool().unwrap_or(true), Ordering::SeqCst);
     let m = &s["mods"]["volume"];
     let vol_on = !(m == &json!(0) || m == &json!(false));
@@ -179,6 +189,7 @@ fn apply_flags(s: &Value) {
 async fn get_settings() -> Value {
     let mut s = current_settings();
     s["autostart"] = json!(autostart_get());
+    s["fullMode"] = json!(["hide", "line", "show"][full_mode(&s) as usize]);
     s
 }
 
@@ -198,6 +209,7 @@ async fn save_settings(app: AppHandle, settings: Value) {
     position_island(&app);
     let mut out = s.clone();
     out["autostart"] = json!(autostart_get());
+    out["fullMode"] = json!(["hide", "line", "show"][full_mode(&s) as usize]);
     let _ = app.emit("settings", out);
 }
 

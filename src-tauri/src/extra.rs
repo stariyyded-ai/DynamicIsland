@@ -648,7 +648,8 @@ static KEY_TX: OnceLock<Mutex<Sender<u32>>> = OnceLock::new();
 unsafe extern "system" fn kb_proc(code: i32, wp: WPARAM, lp: LPARAM) -> LRESULT {
     if code == 0
         && REPLACE_OSD.load(Ordering::Relaxed)
-        && !crate::sys::FULL_NOW.load(Ordering::Relaxed)
+        // in a game the Windows flyout is the one that can actually be seen
+        && !(crate::sys::FULL_RAW.load(Ordering::Relaxed) && crate::sys::FULL_MODE.load(Ordering::Relaxed) != 2)
         && !crate::sys::USER_HIDDEN.load(Ordering::Relaxed)
     {
         let k = &*(lp.0 as *const KBDLLHOOKSTRUCT);

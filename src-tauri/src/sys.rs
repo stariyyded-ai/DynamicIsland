@@ -4,7 +4,7 @@ use base64::Engine;
 use serde_json::json;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU8, Ordering};
 use std::sync::Mutex;
 use std::thread::sleep;
 use std::time::{Duration, Instant};
@@ -820,7 +820,10 @@ fn downloads_loop(app: AppHandle) {
 
 /* ------------------------------------------------------------- fullscreen */
 
-pub static HIDE_FULL: AtomicBool = AtomicBool::new(true);
+/// see main::full_mode
+pub static FULL_MODE: AtomicU8 = AtomicU8::new(0);
+/// a game or fullscreen video is in front, whatever the island does about it
+pub static FULL_RAW: AtomicBool = AtomicBool::new(false);
 pub static USER_HIDDEN: AtomicBool = AtomicBool::new(false);
 pub static FULL_NOW: AtomicBool = AtomicBool::new(false);
 pub static SLIM_BROWSER: AtomicBool = AtomicBool::new(true);
@@ -942,7 +945,8 @@ fn slim_loop(app: AppHandle) {
             *EXE_CACHE.lock().unwrap() = None;
         }
         let Some(h) = app.get_webview_window("island").and_then(|w| w.hwnd().ok()) else { continue };
-        let want = SLIM_BROWSER.load(Ordering::SeqCst) && unsafe { browser_under_island(HWND(h.0)) }.unwrap_or(slim);
+        let full_line = FULL_RAW.load(Ordering::SeqCst) && FULL_MODE.load(Ordering::SeqCst) == 1;
+        let want = full_line || (SLIM_BROWSER.load(Ordering::SeqCst) && unsafe { browser_under_island(HWND(h.0)) }.unwrap_or(slim));
         if want != slim || first {
             first = false;
             slim = want;
@@ -960,13 +964,14 @@ fn fullscreen_loop(app: AppHandle) {
         let st = unsafe { SHQueryUserNotificationState() }.unwrap_or_default();
         let full = st == QUNS_BUSY || st == QUNS_RUNNING_D3D_FULL_SCREEN || st == QUNS_PRESENTATION_MODE
             || unsafe { foreground_is_fullscreen() };
-        let full = full && HIDE_FULL.load(Ordering::SeqCst);
+        FULL_RAW.store(full, Ordering::SeqCst);
+        let full = full && FULL_MODE.load(Ordering::SeqCst) == 0;
         if full != last {
             last = full;
             FULL_NOW.store(full, Ordering::SeqCst);
             crate::apply_visibility(&app);
         }
-        sleep(Duration::from_millis(500));
+        sleep(Duration::from_millis(250));
     }
 }
 

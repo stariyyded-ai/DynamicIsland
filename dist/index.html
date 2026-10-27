@@ -30,6 +30,20 @@ textarea{user-select:text;-webkit-user-select:text}
 .ripple{position:absolute;width:10px;height:10px;margin:-5px 0 0 -5px;border-radius:50%;border:1.5px solid rgba(140,200,255,.6);pointer-events:none;animation:rip .9s ease-out forwards}
 @keyframes rip{to{transform:scale(7);opacity:0}}
 
+.glow{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;opacity:0;transition:opacity .6s ease;
+  box-shadow:0 0 14px 1px var(--glow,#4cc2ff),0 0 34px 4px color-mix(in srgb,var(--glow,#4cc2ff) 45%,transparent)}
+.isl-root.glowing .glow{opacity:.85;animation:fizz 1.7s ease-in-out infinite}
+@keyframes fizz{0%,100%{opacity:.55}45%{opacity:.95}70%{opacity:.7}}
+.isl-root.glowing #rimPath{stroke:color-mix(in srgb,var(--glow,#4cc2ff) 70%,transparent)}
+.spark{position:absolute;width:4px;height:4px;margin:-2px 0 0 -2px;border-radius:50%;background:var(--glow,#4cc2ff);pointer-events:none;
+  box-shadow:0 0 6px var(--glow,#4cc2ff);animation:spark 1s ease-out forwards}
+@keyframes spark{from{transform:translate(0,0) scale(1);opacity:.95}to{transform:translate(var(--sx),var(--sy)) scale(.2);opacity:0}}
+.drop{position:absolute;left:50%;top:-20px;width:14px;height:18px;margin-left:-7px;pointer-events:none;z-index:5;
+  background:var(--dc,#4cc2ff);border-radius:50% 50% 50% 50%/62% 62% 40% 40%;box-shadow:0 0 12px var(--dc,#4cc2ff),inset -2px -3px 4px rgba(0,0,0,.25),inset 2px 2px 3px rgba(255,255,255,.45)}
+.drop.fall{animation:fall .5s cubic-bezier(.55,0,1,.6) forwards}
+@keyframes fall{0%{transform:translateY(0) scaleY(.8)}70%{transform:translateY(calc(var(--top,8px) + 10px)) scaleY(1.25)}100%{transform:translateY(calc(var(--top,8px) + 20px)) scale(1.4,.4);opacity:0}}
+.splash{position:absolute;width:8px;height:8px;margin:-4px 0 0 -4px;border-radius:50%;border:2px solid var(--dc,#4cc2ff);pointer-events:none;animation:splash .6s ease-out forwards}
+@keyframes splash{to{transform:scale(9,4);opacity:0}}
 .bubble{position:absolute;left:50%;top:var(--top,8px);width:36px;height:36px;border-radius:50%;overflow:hidden;transform-origin:50% 0;cursor:pointer;opacity:0;visibility:hidden;
   background:var(--i-bg);box-shadow:0 6px 12px rgba(0,0,0,.35),inset 0 0 0 1px var(--i-rim);display:grid;place-items:center}
 .bubble svg{width:24px;height:24px}
@@ -212,6 +226,7 @@ textarea{user-select:text;-webkit-user-select:text}
   <div class="bubble" id="bubble"></div>
 
   <div class="island" id="island">
+    <div class="glow" id="glow"></div>
     <svg class="shape" id="shape"><path id="shapePath"/><path id="rimPath" fill="none" stroke-width="1"/></svg>
     <div class="content" id="content">
       <div class="glass-sheen"></div>
@@ -394,7 +409,7 @@ textarea{user-select:text;-webkit-user-select:text}
   };
   const SIZE = {s:.86, m:1, l:1.14};
   const island = $('island'), content = $('content'), islRoot = $('islRoot'), bubble = $('bubble');
-  const shape = $('shape'), shapePath = $('shapePath'), rimPath = $('rimPath');
+  const shape = $('shape'), shapePath = $('shapePath'), rimPath = $('rimPath'), glowEl = $('glow');
   const panels = {};
   island.querySelectorAll('.panel').forEach(p => panels[p.dataset.s] = p);
   function layoutPanels(){
@@ -402,10 +417,10 @@ textarea{user-select:text;-webkit-user-select:text}
   }
 
   /* ---------- live state ---------- */
-  let set = {theme:'dark', size:'m', op:100, top:8, hideFull:true, dnd:false, mods:{music:1,volume:1,brightness:1,layout:1,download:1,clip:1,notes:1,notify:1,copy:1}, notifyOther:true};
+  let set = {theme:'dark', size:'m', op:100, top:8, hideFull:true, dnd:false, mods:{music:1,volume:1,brightness:1,layout:1,download:1,clip:1,notes:1,notify:1,copy:1}, notifyOther:true, fx:true};
   let media = null, mediaPos = 0, mediaAt = 0, lastPlayingAt = 0, covers = {};
   let vol = {v:0, muted:false}, shelf = [], dl = null, clips = [];
-  let expanded = null, trans = null, cur = 'idle', hidden = false, slim = false, peek = false, peekT = null;
+  let expanded = null, trans = null, cur = 'idle', hidden = false, slim = false, peek = false, peekT = null, accent = null;
   const mod = k => !!(set.mods && set.mods[k]);
 
   /* ---------- spring + water shape ---------- */
@@ -462,6 +477,7 @@ textarea{user-select:text;-webkit-user-select:text}
     const d = buildPath(W, H, R);
     shapePath.setAttribute('d', d); rimPath.setAttribute('d', d);
     content.style.clipPath = 'path("' + d + '")';
+    glowEl.style.borderRadius = R + 'px';
     const b = Math.max(0, sp.b.x);
     const off = (W/2 + 8 + 18) * b * k + sp.dx.x;
     bubble.style.transform = 'translateX(calc(-50% + ' + off.toFixed(2) + 'px)) scale(' + ((.35 + .65*Math.min(1.1, b)) * k).toFixed(3) + ')';
@@ -557,6 +573,8 @@ textarea{user-select:text;-webkit-user-select:text}
     let name = (trans && trans.name) || expanded || base;
     if (slim && !peek && !trans && !expanded && !hover && !menuOpen) name = 'line';
     islRoot.classList.toggle('slim', name === 'line');
+    const glowing = !!(set.fx && accent && media && media.playing && (name === 'musicMini' || name === 'music'));
+    islRoot.classList.toggle('glowing', glowing);
     if (name !== cur){
       panels[cur].classList.remove('on');
       cur = name; panels[cur].classList.add('on');
@@ -651,7 +669,71 @@ textarea{user-select:text;-webkit-user-select:text}
   };
   const fmt = s => { s = Math.max(0, Math.floor(s)); const h = Math.floor(s/3600), m = Math.floor(s%3600/60), x = String(s%60).padStart(2,'0'); return h ? h + ':' + String(m).padStart(2,'0') + ':' + x : m + ':' + x; };
   const curPos = () => !media ? 0 : Math.min(media.dur || 1e9, media.playing ? mediaPos + (performance.now() - mediaAt)/1000 : mediaPos);
+  /* ---------- effects: glow in the cover's colour, a drop for important messages ---------- */
+  const SRC_TINT = {sp:'#1ed760', ym:'#ffcc00', yt:'#ff4040', web:'#4cc2ff', app:'#b38cff'};
+  function pickAccent(){
+    const data = media && covers[media.key];
+    const fallback = media ? (SRC_TINT[media.src] || SRC_TINT.app) : null;
+    if (!data){ accent = fallback; islRoot.style.setProperty('--glow', accent || '#4cc2ff'); return; }
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const c = document.createElement('canvas'); c.width = c.height = 24;
+        const g = c.getContext('2d'); g.drawImage(img, 0, 0, 24, 24);
+        const px = g.getImageData(0, 0, 24, 24).data;
+        let best = null, bs = -1, r = 0, gg = 0, b = 0, n = 0;
+        // weight towards saturated, not-too-dark pixels so a black frame doesn't win
+        for (let i = 0; i < px.length; i += 4){
+          const R = px[i], G = px[i+1], B = px[i+2], mx = Math.max(R, G, B), mn = Math.min(R, G, B);
+          const sat = mx ? (mx - mn)/mx : 0, w = sat * sat * (mx/255);
+          r += R*w; gg += G*w; b += B*w; n += w;
+          if (w > bs){ bs = w; best = [R, G, B]; }
+        }
+        let col = n > 0.5 ? [r/n, gg/n, b/n] : best;
+        if (!col || n < 0.05){ accent = fallback; }
+        else {
+          const mx = Math.max(...col) || 1, k = Math.max(1, 200/mx);
+          col = col.map(v => Math.min(255, Math.round(v*k)));
+          accent = 'rgb(' + col.join(',') + ')';
+        }
+      } catch (e) { accent = fallback; }
+      islRoot.style.setProperty('--glow', accent || '#4cc2ff'); render();
+    };
+    img.onerror = () => { accent = fallback; islRoot.style.setProperty('--glow', accent || '#4cc2ff'); };
+    img.src = data;
+  }
+  // tiny fizzing sparks off the edge while music plays
+  setInterval(() => {
+    if (reduce || hidden || !islRoot.classList.contains('glowing') || document.hidden) return;
+    const w = sp.w.x, h = sp.h.x, side = Math.random();
+    const el = document.createElement('i'); el.className = 'spark';
+    let x, y, sx, sy;
+    if (side < .6){ x = 12 + Math.random()*(w - 24); y = h; sx = (Math.random() - .5)*14; sy = 8 + Math.random()*12; }
+    else { const L = side < .8; x = L ? 0 : w; y = 6 + Math.random()*(h - 12); sx = (L ? -1 : 1)*(8 + Math.random()*12); sy = (Math.random() - .3)*8; }
+    el.style.left = x + 'px'; el.style.top = y + 'px'; el.style.setProperty('--sx', sx + 'px'); el.style.setProperty('--sy', sy + 'px');
+    island.appendChild(el); setTimeout(() => el.remove(), 1050);
+  }, 180);
+  const DROP_TINT = {telegram:'#2aa3ef', mail:'#ffb340', call:'#34c759', remind:'#ffcc00'};
+  let falling = false;
+  function drop(kind, then){
+    if (!set.fx || reduce || hidden){ then(); return; }
+    const el = document.createElement('i'); el.className = 'drop';
+    islRoot.style.setProperty('--dc', DROP_TINT[kind] || '#4cc2ff');
+    islRoot.appendChild(el); falling = true;
+    requestAnimationFrame(() => el.classList.add('fall'));
+    setTimeout(() => {
+      el.remove(); falling = false;
+      const sp2 = document.createElement('i'); sp2.className = 'splash';
+      const rc = island.getBoundingClientRect();
+      sp2.style.left = (rc.left + rc.width/2) + 'px'; sp2.style.top = rc.top + 'px';
+      islRoot.appendChild(sp2); setTimeout(() => sp2.remove(), 650);
+      poke(top, (N - 1)/2, 190, 3.5); poke(bot, (N - 1)/2, 90, 5); kick(70);
+      then();
+    }, 470);
+  }
+
   function drawCover(){
+    pickAccent();
     const data = media && covers[media.key];
     document.querySelectorAll('.mcov').forEach(el => {
       el.className = el.className.replace(/\b(sp|ym|yt|app|web)\b/g, '').trim() + ' ' + (media ? media.src : 'app');
@@ -911,11 +993,11 @@ textarea{user-select:text;-webkit-user-select:text}
     if (cur === 'hist') drawHist();
     if (set.dnd || hidden) return;
     const busy = trans && (trans.name === 'notif' || trans.name === 'call');
-    if (n.kind === 'call'){ nq.unshift(n); if ((!busy || trans.name !== 'call') && !typing()) return showNext(); return; }
+    if (n.kind === 'call'){ nq.unshift(n); if ((!busy || trans.name !== 'call') && !typing()) return drop('call', showNext); return; }
     // a burst from one chat replaces the waiting message instead of queueing up
     const same = nq.findIndex(x => x.kind === n.kind && x.title === n.title);
     if (same >= 0) nq[same] = n; else nq.push(n);
-    if (!busy) showNext();
+    if (!busy && !falling){ if (n.kind === 'other') showNext(); else drop(n.kind, showNext); }
     else if (cur === 'notif'){ const more = nq.filter(x => x.kind !== 'call').length; const m = $('ntTxt').querySelector('.more'); if (m) m.textContent = 'ещё ' + more; else $('ntTxt').insertAdjacentHTML('beforeend', '<span class="more">ещё ' + more + '</span>'); kick(30); }
   });
   const dismissNotif = () => { document.activeElement && document.activeElement.blur(); trans = null; if (nq.length) showNext(); else render(); };
@@ -948,7 +1030,7 @@ textarea{user-select:text;-webkit-user-select:text}
     let k = 0; const iv = setInterval(() => { if (cur !== 'remind' || ++k > 6) return clearInterval(iv); kick(70); }, 900);
     kick(120);
   }
-  listen('reminder', r => { rq.push(r); if (!(trans && trans.name === 'remind')) showReminder(); });
+  listen('reminder', r => { rq.push(r); if (!(trans && trans.name === 'remind') && !falling) drop('remind', showReminder); });
   const remAct = a => { if (rCur) invoke('reminder_action', {sid: rCur.sid, idx: rCur.idx, text: rCur.text, action: a}); trans = null; if (rq.length) showReminder(); else render(); };
   $('rmDone').onclick = () => remAct('done');
   $('rmSnooze').onclick = () => remAct('snooze');
