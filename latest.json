@@ -1,6 +1,6 @@
 {
-  "version": "0.12.3",
-  "url": "https://raw.githubusercontent.com/stariyyded-ai/DynamicIsland/main/releases/Island-0.12.3.zip",
-  "setup": "https://raw.githubusercontent.com/stariyyded-ai/DynamicIsland/main/releases/Island-Setup-0.12.3.exe",
-  "notes": "Исправлено: в 0.12.2 остров мог пропасть с экрана из-за постоянной перезагрузки."
+  "version": "0.12.4",
+  "url": "https://raw.githubusercontent.com/stariyyded-ai/DynamicIsland/main/releases/Island-0.12.4.zip",
+  "setup": "https://raw.githubusercontent.com/stariyyded-ai/DynamicIsland/main/releases/Island-Setup-0.12.4.exe",
+  "notes": "Исправлено: остров мог стать невидимым, когда Windows ошибочно считала его закрытым другими окнами."
 }

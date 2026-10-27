@@ -219,6 +219,12 @@ fn watchdog(app: AppHandle) {
     }
 }
 
+/// Chromium stops drawing a window it thinks is covered by others. The island is a see-through layer on top
+/// of everything, and Windows sometimes reports it as covered: the page then freezes and the island vanishes.
+/// Every window gets the same switches, because WebView2 shares one browser between them.
+pub const BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion \
+    --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --disable-background-timer-throttling";
+
 fn open_settings(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("settings") {
         let _ = w.unminimize();
@@ -227,6 +233,7 @@ fn open_settings(app: &AppHandle) {
         return;
     }
     let _ = WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
+        .additional_browser_args(BROWSER_ARGS)
         .title("Настройки острова")
         .inner_size(480.0, 760.0)
         .min_inner_size(400.0, 500.0)
@@ -484,6 +491,7 @@ fn main() {
             }
 
             let win = WebviewWindowBuilder::new(app, "island", WebviewUrl::App("index.html".into()))
+                .additional_browser_args(BROWSER_ARGS)
                 .title("Island")
                 .inner_size(WIN_W, WIN_H)
                 .transparent(true)

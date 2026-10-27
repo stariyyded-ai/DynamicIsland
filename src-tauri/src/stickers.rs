@@ -83,6 +83,7 @@ fn open_window(app: &AppHandle, s: &Sticker) {
         return;
     }
     let mut b = WebviewWindowBuilder::new(app, label(s.id), WebviewUrl::App(format!("sticker.html?id={}", s.id).into()))
+        .additional_browser_args(crate::BROWSER_ARGS)
         .title("Стикер")
         .inner_size(W, s.h)
         .decorations(false)
