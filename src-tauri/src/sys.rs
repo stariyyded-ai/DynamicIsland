@@ -17,7 +17,7 @@ use windows::Media::Control::{
     GlobalSystemMediaTransportControlsSessionPlaybackStatus as PlaybackStatus,
 };
 use windows::Storage::Streams::DataReader;
-use windows::Win32::Foundation::{CloseHandle, HANDLE, HGLOBAL, HWND, LPARAM, POINT, RECT};
+use windows::Win32::Foundation::{CloseHandle, HANDLE, HGLOBAL, HWND, LPARAM, POINT, RECT, WPARAM};
 use windows::Win32::System::Threading::{OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION};
 use windows::Win32::Media::Audio::Endpoints::{IAudioEndpointVolume, IAudioMeterInformation};
 use windows::Win32::Media::Audio::{
@@ -41,15 +41,14 @@ use windows::Win32::System::Wmi::{
     IWbemLocator, WbemLocator, WBEM_FLAG_FORWARD_ONLY, WBEM_FLAG_RETURN_IMMEDIATELY, WBEM_INFINITE,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetKeyboardLayout, RegisterHotKey, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, MOD_NOREPEAT,
-    MOD_SHIFT, MOD_WIN, VIRTUAL_KEY, VK_MEDIA_NEXT_TRACK, VK_MEDIA_PLAY_PAUSE, VK_MEDIA_PREV_TRACK,
+    GetKeyboardLayout, RegisterHotKey, MOD_NOREPEAT, MOD_SHIFT, MOD_WIN,
 };
 use windows::Win32::UI::Shell::{
     DragQueryFileW, SHQueryUserNotificationState, HDROP, QUNS_BUSY, QUNS_PRESENTATION_MODE,
     QUNS_RUNNING_D3D_FULL_SCREEN,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetClassNameW, GetCursorPos, GetForegroundWindow, GetMessageW, GetWindowRect, GetWindowTextW,
+    EnumWindows, PostMessageW, WM_APPCOMMAND, GetClassNameW, GetCursorPos, GetForegroundWindow, GetMessageW, GetWindowRect, GetWindowTextW,
     GetWindowThreadProcessId, IsWindowVisible, GetWindowLongW, IsIconic, GWL_STYLE, WS_CAPTION, MB_ICONASTERISK, MSG, WM_HOTKEY,
 };
 use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
@@ -228,9 +227,12 @@ unsafe fn browser_sound() -> Option<BrowserSound> {
         }
     }
     let exe = exe?;
-    let titles = window_titles(&exe);
+    let wins = window_titles(&exe);
+    let titles: Vec<String> = wins.iter().map(|(_, t)| t.clone()).collect();
     let music = ["яндекс музык", "yandex music", "youtube", "vk музыка", "vk music", "звук", "zvuk", "spotify", "soundcloud", "музыка"];
     let pick = titles.iter().find(|t| music.iter().any(|m| t.to_lowercase().contains(m))).cloned();
+    let target = pick.as_ref().and_then(|t| wins.iter().find(|(_, w)| w == t)).or(wins.first()).map(|(h, _)| *h).unwrap_or(0);
+    SOUND_HWND.store(target, Ordering::SeqCst);
     let label = match exe.as_str() {
         "browser.exe" | "yandex.exe" => "Яндекс Браузер",
         "chrome.exe" => "Chrome",
@@ -247,10 +249,13 @@ unsafe fn browser_sound() -> Option<BrowserSound> {
     Some(BrowserSound { exe, label, title, artist })
 }
 
-fn window_titles(exe: &str) -> Vec<String> {
+/// The browser window the fallback player last saw making sound.
+static SOUND_HWND: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+
+fn window_titles(exe: &str) -> Vec<(isize, String)> {
     struct Ctx {
         exe: String,
-        out: Vec<String>,
+        out: Vec<(isize, String)>,
     }
     unsafe extern "system" fn each(hwnd: HWND, lp: LPARAM) -> windows::core::BOOL {
         let ctx = &mut *(lp.0 as *mut Ctx);
@@ -265,7 +270,7 @@ fn window_titles(exe: &str) -> Vec<String> {
         let mut pid = 0u32;
         GetWindowThreadProcessId(hwnd, Some(&mut pid));
         if exe_name(pid).as_deref() == Some(ctx.exe.as_str()) {
-            ctx.out.push(String::from_utf16_lossy(&buf[..n as usize]));
+            ctx.out.push((hwnd.0 as isize, String::from_utf16_lossy(&buf[..n as usize])));
         }
         true.into()
     }
@@ -294,21 +299,25 @@ fn split_title(t: &str) -> (String, String) {
     }
 }
 
+/// Without a Windows media session the browser window is told directly, the way a keyboard's media keys
+/// would tell it. Global media keys are not used here: they would wake whatever other player is paused.
 fn media_key(cmd: &str) {
-    let vk = match cmd {
-        "toggle" => VK_MEDIA_PLAY_PAUSE,
-        "next" => VK_MEDIA_NEXT_TRACK,
-        "prev" => VK_MEDIA_PREV_TRACK,
+    const APPCOMMAND_MEDIA_NEXTTRACK: isize = 11;
+    const APPCOMMAND_MEDIA_PREVIOUSTRACK: isize = 12;
+    const APPCOMMAND_MEDIA_PLAY_PAUSE: isize = 14;
+    let ac = match cmd {
+        "toggle" => APPCOMMAND_MEDIA_PLAY_PAUSE,
+        "next" => APPCOMMAND_MEDIA_NEXTTRACK,
+        "prev" => APPCOMMAND_MEDIA_PREVIOUSTRACK,
         _ => return,
     };
-    let key = |vk: VIRTUAL_KEY, up: bool| INPUT {
-        r#type: INPUT_KEYBOARD,
-        Anonymous: INPUT_0 { ki: KEYBDINPUT { wVk: vk, dwFlags: if up { KEYEVENTF_KEYUP } else { Default::default() }, ..Default::default() } },
-    };
-    unsafe {
-        SendInput(&[key(vk, false), key(vk, true)], std::mem::size_of::<INPUT>() as i32);
+    let h = SOUND_HWND.load(Ordering::SeqCst);
+    if h == 0 {
+        return;
     }
-    log(&format!("media {} -> media key", cmd));
+    let hwnd = HWND(h as *mut core::ffi::c_void);
+    let r = unsafe { PostMessageW(Some(hwnd), WM_APPCOMMAND, WPARAM(h as usize), LPARAM(ac << 16)) };
+    log(&format!("media {} -> app command to browser window: {:?}", cmd, r));
 }
 
 fn media_loop(app: AppHandle) {

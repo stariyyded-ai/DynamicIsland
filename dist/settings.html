@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <title>Настройки острова</title>
 <style>
+[hidden]{display:none!important}
 :root{
   --bg:#f3f5f9; --fg:#121722; --muted:#5d6678; --line:#d5dbe6; --chip:#ffffff; --card:#ffffff; --on:#121722; --on-fg:#ffffff; --accent:#0067c0;
   color-scheme:light;
@@ -22,6 +23,8 @@ h1{margin:0;font-size:22px;font-weight:700;letter-spacing:-.01em}
 .seg{display:flex;flex-wrap:wrap;gap:6px}
 .seg button{font:inherit;font-size:13px;font-weight:500;color:var(--fg);background:var(--chip);border:1px solid var(--line);border-radius:999px;padding:6px 13px;cursor:pointer}
 .seg button:hover{border-color:var(--muted)}
+.pet-colors button{display:inline-flex;align-items:center;gap:6px;padding:3px 12px 3px 4px}
+.pet-colors svg{width:30px;height:27px}
 .seg button[aria-pressed="true"]{background:var(--on);color:var(--on-fg);border-color:var(--on)}
 input[type=range]{width:100%;accent-color:var(--accent)}
 .sw-row{font:inherit;font-size:13px;display:flex;align-items:center;gap:10px;color:var(--fg);background:none;border:0;cursor:pointer;padding:2px 0;text-align:left}
@@ -50,6 +53,8 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
     <h2>Вид</h2>
     <div class="set"><div class="lab">Тема</div><div class="seg" data-key="theme"><button data-v="dark">Тёмная</button><button data-v="light">Светлая</button><button data-v="glass">Стекло</button></div></div>
     <div class="set"><div class="lab">Размер</div><div class="seg" data-key="size"><button data-v="s">Компактный</button><button data-v="m">Обычный</button><button data-v="l">Крупный</button></div></div>
+    <div class="set"><div class="lab">Питомец</div><div class="seg" data-key="pet"><button data-v="none">Без питомца</button><button data-v="dragon">Дракончик</button><button data-v="cat">Котик</button><button data-v="fox">Лисёнок</button></div></div>
+    <div class="set" id="petColorRow"><div class="lab">Окрас</div><div class="seg pet-colors" data-key="petColor" id="petColors"></div></div>
     <div class="set"><label class="lab" for="op">Непрозрачность <output id="opOut"></output></label><input type="range" id="op" min="50" max="100" step="5"></div>
     <div class="set"><label class="lab" for="top">Отступ сверху <output id="topOut"></output></label><input type="range" id="top" min="0" max="40" step="2"></div>
     <div class="set"><div class="lab">Монитор</div><div class="seg" data-key="mon" id="mons"></div></div>
@@ -91,6 +96,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 
   <p class="foot">Остров · чтобы уведомления не дублировались, выключите баннеры для Telegram и почты в Параметры → Система → Уведомления, оставив их в центре уведомлений. Заметки и настройки хранятся в папке %APPDATA%\Island</p>
 </main>
+<script src="pet.js"></script>
 <script>
 (function(){
   const TA = window.__TAURI__;
@@ -100,7 +106,18 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
   let s = {mods:{}};
   $('mods').innerHTML = MODS.map(([k, n]) => '<label><input type="checkbox" data-m="' + k + '">' + n + '</label>').join('');
 
+  function drawPetColors(){
+    const kind = s.pet && s.pet !== 'none' ? s.pet : null;
+    $('petColorRow').hidden = !kind || !window.PET;
+    if (!kind || !window.PET) return;
+    const key = kind;
+    if ($('petColors').dataset.kind !== key){
+      $('petColors').dataset.kind = key;
+      $('petColors').innerHTML = PET.COLORS[kind].map((c, i) => '<button data-v="' + i + '">' + PET.svg(kind, i, {}) + c.name + '</button>').join('');
+    }
+  }
   function draw(){
+    drawPetColors();
     document.querySelectorAll('.seg[data-key]').forEach(seg => seg.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(s[seg.dataset.key]) === b.dataset.v)));
     document.querySelectorAll('[data-flag]').forEach(b => b.setAttribute('aria-pressed', !!s[b.dataset.flag]));
     document.querySelectorAll('[data-m]').forEach(c => c.checked = !!(s.mods || {})[c.dataset.m]);
@@ -111,7 +128,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 
   document.addEventListener('click', e => {
     const b = e.target.closest('.seg[data-key] button');
-    if (b){ const key = b.parentElement.dataset.key; save({[key]: key === 'mon' ? +b.dataset.v : b.dataset.v}); return; }
+    if (b){ const key = b.parentElement.dataset.key; save({[key]: key === 'mon' || key === 'petColor' ? +b.dataset.v : b.dataset.v, ...(key === 'pet' ? {petColor: 0} : {})}); return; }
     const f = e.target.closest('[data-flag]');
     if (f) save({[f.dataset.flag]: !s[f.dataset.flag]});
   });

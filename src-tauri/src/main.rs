@@ -40,7 +40,7 @@ fn data_dir() -> PathBuf {
 fn default_settings() -> Value {
     json!({
         "theme": "dark", "size": "m", "op": 100, "top": 8, "mon": 1,
-        "hideFull": true, "dnd": false, "osd": true, "notifyOther": true, "slimBrowser": true, "fx": true,
+        "hideFull": true, "dnd": false, "osd": true, "notifyOther": true, "slimBrowser": true, "fx": true, "pet": "dragon", "petColor": 0,
         "mods": { "music": 1, "volume": 1, "brightness": 1, "layout": 1, "download": 1,
                   "clip": 1, "notes": 1, "notify": 1, "copy": 1 }
     })

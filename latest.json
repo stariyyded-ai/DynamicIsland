@@ -1,5 +1,5 @@
 {
-  "version": "0.9.0",
-  "url": "https://raw.githubusercontent.com/stariyyded-ai/DynamicIsland/main/releases/Island-0.9.0.zip",
-  "notes": "В играх и полноэкранном видео остров можно спрятать, свернуть в тонкую линию или оставить. Новые эффекты: свечение в цвет обложки трека и капля при важном уведомлении."
+  "version": "0.10.0",
+  "url": "https://raw.githubusercontent.com/stariyyded-ai/DynamicIsland/main/releases/Island-0.10.0.zip",
+  "notes": "Питомец рядом с островом: дракончик, котик или лисёнок. Проигрыватель выровнен по центру. Попытка управлять музыкой в браузерах, которые не сообщают о ней Windows."
 }
