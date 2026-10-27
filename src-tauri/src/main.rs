@@ -9,7 +9,7 @@ mod update;
 
 use serde_json::{json, Value};
 use std::path::PathBuf;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
@@ -22,7 +22,8 @@ use windows::Win32::System::Registry::{
 };
 use windows::Win32::System::Threading::CreateMutexW;
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetWindowLongPtrW, SetWindowLongPtrW, GWL_EXSTYLE, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW,
+    GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+    WS_EX_APPWINDOW, WS_EX_TOOLWINDOW,
 };
 
 const WIN_W: f64 = 660.0;
@@ -191,6 +192,51 @@ pub fn apply_visibility(app: &AppHandle) {
     } else {
         let _ = win.show();
         let _ = win.set_always_on_top(true);
+    }
+}
+
+static LAST_BEAT: AtomicU64 = AtomicU64::new(0);
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+}
+
+/// The island page calls this every few seconds while it is alive.
+#[tauri::command]
+fn heartbeat() {
+    LAST_BEAT.store(now_ms(), Ordering::SeqCst);
+}
+
+/// Keeps the island on screen: puts it back on top when another app pushed it under,
+/// shows it again if it got hidden by mistake, and reloads the page when it stopped answering.
+fn watchdog(app: AppHandle) {
+    let mut since_show = 0u32;
+    loop {
+        std::thread::sleep(std::time::Duration::from_secs(3));
+        let Some(win) = app.get_webview_window("island") else { continue };
+        let hide = sys::FULL_NOW.load(Ordering::SeqCst) || sys::USER_HIDDEN.load(Ordering::SeqCst);
+        if hide {
+            // a hidden page runs its timers slowly, so silence there means nothing
+            LAST_BEAT.store(now_ms(), Ordering::SeqCst);
+            since_show = 0;
+            continue;
+        }
+        if !win.is_visible().unwrap_or(true) {
+            sys::log("watchdog: island was hidden for no reason, showing it");
+            let _ = win.show();
+        }
+        if let Ok(h) = win.hwnd() {
+            unsafe {
+                let _ = SetWindowPos(HWND(h.0 as _), Some(HWND_TOPMOST), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            }
+        }
+        since_show += 1;
+        let beat = LAST_BEAT.load(Ordering::SeqCst);
+        if beat != 0 && since_show > 3 && now_ms().saturating_sub(beat) > 25_000 {
+            sys::log("watchdog: island page stopped answering, reloading it");
+            let _ = win.reload();
+            LAST_BEAT.store(now_ms(), Ordering::SeqCst);
+        }
     }
 }
 
@@ -437,6 +483,9 @@ fn main() {
         }
     }
     let first_run = !data_dir().join("settings.json").exists();
+    std::panic::set_hook(Box::new(|info| {
+        sys::log(&format!("panic: {}", info));
+    }));
 
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
@@ -444,7 +493,7 @@ fn main() {
             clip_list, clip_set, note_load, note_save, open_settings_cmd, notif_open, notif_act, copy_show,
             sticker_create, sticker_get, sticker_update, sticker_resize, sticker_delete, stickers_show_all, stickers_count, reminder_action,
             shelf_list, shelf_add, shelf_remove, shelf_clear, shelf_open, shelf_drag,
-            update_check, update_install, app_version
+            update_check, update_install, app_version, heartbeat
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -513,14 +562,16 @@ fn main() {
             shelf::load();
             shelf::create_zone(&handle);
             let h6 = handle.clone();
-            std::thread::spawn(move || shelf::zone_loop(h6));
+            sys::keep("zone_loop", move || shelf::zone_loop(h6.clone()));
             let h5 = handle.clone();
             std::thread::spawn(move || update::watch(h5));
             stickers::restore(&handle);
             let h4 = handle.clone();
-            std::thread::spawn(move || stickers::reminder_loop(h4));
+            sys::keep("reminder_loop", move || stickers::reminder_loop(h4.clone()));
             let h7 = handle.clone();
-            std::thread::spawn(move || follow_cursor(h7));
+            sys::keep("follow_cursor", move || follow_cursor(h7.clone()));
+            let h8 = handle.clone();
+            sys::keep("watchdog", move || watchdog(h8.clone()));
 
             // follow monitor layout changes (docking, resolution)
             let h2 = handle.clone();

@@ -597,6 +597,8 @@ textarea{user-select:text;-webkit-user-select:text}
   }
   function transient(name, ms){ trans = {name, until: Date.now() + ms}; render(); }
   setInterval(render, 300);
+  // lets the app notice if this page ever freezes, so it can bring the island back
+  setInterval(() => invoke('heartbeat').catch(() => {}), 5000); invoke('heartbeat').catch(() => {});
 
   function drawBubble(){
     const k = bubbleKind;
@@ -933,7 +935,7 @@ textarea{user-select:text;-webkit-user-select:text}
       const b = document.createElement('button'); b.type = 'button'; b.className = 'hi';
       b.innerHTML = '<span class="av"></span><span class="t"><b>' + esc(n.title) + '</b><span class="dim">' + esc((n.body || '').replace(/\s+/g, ' ')) + '</span></span><span class="tm">' + ago(n.ts) + '</span>';
       fillAv(b.querySelector('.av'), n, n.kind);
-      b.onclick = () => { if (!n.browser) invoke('notif_open', {aumid: n.aumid, launch: n.launch || ''}); expanded = null; render(); };
+      b.onclick = () => { invoke('notif_open', {aumid: n.aumid, launch: n.launch || ''}); expanded = null; render(); };
       l.appendChild(b);
     });
   }
@@ -1050,7 +1052,7 @@ textarea{user-select:text;-webkit-user-select:text}
     else if (cur === 'notif'){ const more = nq.filter(x => x.kind !== 'call').length; const m = $('ntTxt').querySelector('.more'); if (m) m.textContent = 'ещё ' + more; else $('ntTxt').insertAdjacentHTML('beforeend', '<span class="more">ещё ' + more + '</span>'); kick(30); }
   });
   const dismissNotif = () => { document.activeElement && document.activeElement.blur(); trans = null; if (nq.length) showNext(); else render(); };
-  $('nt').addEventListener('click', () => { if (nCur && !nCur.browser) invoke('notif_open', {aumid: nCur.aumid, launch: nCur.launch || ''}); nq.length = 0; dismissNotif(); });
+  $('nt').addEventListener('click', () => { if (nCur) invoke('notif_open', {aumid: nCur.aumid, launch: nCur.launch || ''}); nq.length = 0; dismissNotif(); });
   function rpStatus(text, color){ $('rpSt').hidden = false; $('rpSt').textContent = text; $('rpSt').style.color = color; $('rpAct').hidden = true; }
   $('rp').addEventListener('submit', async e => {
     e.preventDefault();

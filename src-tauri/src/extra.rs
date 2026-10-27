@@ -30,14 +30,14 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SW_SHOWNORMAL, WH_KEYBOARD_LL, WM_KEYDOWN, WM_SYSKEYDOWN,
 };
 
-use crate::sys::{com_init, emit, endpoint, log};
+use crate::sys::{com_init, emit, endpoint, keep, log};
 
 pub fn spawn_all(app: &AppHandle) {
     let a = app.clone();
-    std::thread::spawn(move || notify_loop(a));
+    keep("notify_loop", move || notify_loop(a.clone()));
     let a = app.clone();
-    std::thread::spawn(move || copy_loop(a));
-    std::thread::spawn(volume_keys_loop);
+    keep("copy_loop", move || copy_loop(a.clone()));
+    keep("volume_keys_loop", volume_keys_loop);
 }
 
 /* ---------------------------------------------------------- notifications */
@@ -511,11 +511,24 @@ pub fn notif_act(aumid: &str, args: &str, input: Option<&str>, text: Option<&str
     }
 }
 
+/// Opens what a notification is about: the chat it came from when the app lets us activate it,
+/// otherwise the app's own window, and as a last resort the app is started.
 pub fn notif_open(aumid: &str, launch: &str) {
     if aumid.is_empty() {
         return;
     }
-    if !launch.is_empty() && notif_act(aumid, launch, None, None) {
+    let activated = !launch.is_empty() && notif_act(aumid, launch, None, None);
+    let win = crate::sys::app_window(aumid);
+    log(&format!("notif open {}: activated {}, window {}", aumid, activated, win.is_some()));
+    if let Some(h) = win {
+        // activation opens the right chat but often leaves the window behind the others
+        if activated {
+            sleep(Duration::from_millis(250));
+        }
+        crate::sys::bring_front(h);
+        return;
+    }
+    if activated {
         return;
     }
     let target: Vec<u16> = format!("shell:AppsFolder\\{}", aumid).encode_utf16().chain(Some(0)).collect();

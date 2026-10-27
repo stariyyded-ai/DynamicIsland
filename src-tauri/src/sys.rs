@@ -42,15 +42,16 @@ use windows::Win32::System::Wmi::{
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetKeyboardLayout, RegisterHotKey, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, MOD_NOREPEAT,
-    MOD_SHIFT, MOD_WIN, VK_MEDIA_NEXT_TRACK, VK_MEDIA_PLAY_PAUSE, VK_MEDIA_PREV_TRACK,
+    MOD_SHIFT, MOD_WIN, VK_MENU, VK_MEDIA_NEXT_TRACK, VK_MEDIA_PLAY_PAUSE, VK_MEDIA_PREV_TRACK,
 };
 use windows::Win32::UI::Shell::{
     DragQueryFileW, SHQueryUserNotificationState, HDROP, QUNS_BUSY, QUNS_PRESENTATION_MODE,
     QUNS_RUNNING_D3D_FULL_SCREEN,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, SetForegroundWindow, GetClassNameW, GetCursorPos, GetForegroundWindow, GetMessageW, GetWindowRect, GetWindowTextW,
+    EnumWindows, IsZoomed, SetForegroundWindow, GetClassNameW, GetCursorPos, GetForegroundWindow, GetMessageW, GetWindowRect, GetWindowTextW,
     GetWindowThreadProcessId, IsWindowVisible, GetWindowLongW, IsIconic, GWL_STYLE, WS_CAPTION, MSG, WM_HOTKEY,
+    GetWindow, GetWindowTextLengthW, ShowWindow, GWL_EXSTYLE, GW_OWNER, SW_RESTORE, WS_EX_TOOLWINDOW,
 };
 use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
 use windows::Win32::Globalization::{GetLocaleInfoW, LOCALE_SABBREVLANGNAME};
@@ -67,23 +68,37 @@ pub(crate) fn emit(app: &AppHandle, ev: &str, payload: serde_json::Value) {
 
 pub fn spawn_all(app: &AppHandle) {
     let a = app.clone();
-    std::thread::spawn(move || media_loop(a));
+    keep("media_loop", move || media_loop(a.clone()));
     let a = app.clone();
-    std::thread::spawn(move || volume_loop(a));
+    keep("volume_loop", move || volume_loop(a.clone()));
     let a = app.clone();
-    std::thread::spawn(move || layout_loop(a));
+    keep("layout_loop", move || layout_loop(a.clone()));
     let a = app.clone();
-    std::thread::spawn(move || brightness_loop(a));
+    keep("brightness_loop", move || brightness_loop(a.clone()));
     let a = app.clone();
-    std::thread::spawn(move || clipboard_loop(a));
+    keep("clipboard_loop", move || clipboard_loop(a.clone()));
     let a = app.clone();
-    std::thread::spawn(move || downloads_loop(a));
+    keep("downloads_loop", move || downloads_loop(a.clone()));
     let a = app.clone();
-    std::thread::spawn(move || fullscreen_loop(a));
+    keep("fullscreen_loop", move || fullscreen_loop(a.clone()));
     let a = app.clone();
-    std::thread::spawn(move || hotkey_loop(a));
+    keep("slim_loop", move || slim_loop(a.clone()));
     let a = app.clone();
-    std::thread::spawn(move || hit_loop(a));
+    keep("hotkey_loop", move || hotkey_loop(a.clone()));
+    let a = app.clone();
+    keep("hit_loop", move || hit_loop(a.clone()));
+}
+
+/// Runs a background loop on its own thread and starts it again if it ever fails,
+/// so one bad event can't take the music, notifications or the whole island down with it.
+pub fn keep<F: Fn() + Send + 'static>(name: &'static str, f: F) {
+    std::thread::spawn(move || loop {
+        if std::panic::catch_unwind(std::panic::AssertUnwindSafe(&f)).is_ok() {
+            return;
+        }
+        log(&format!("{} failed, restarting", name));
+        sleep(Duration::from_secs(3));
+    });
 }
 
 /* ------------------------------------------------------------------ media */
@@ -302,6 +317,68 @@ fn window_titles(exe: &str) -> Vec<(isize, String)> {
         let _ = EnumWindows(Some(each), LPARAM(&mut ctx as *mut Ctx as isize));
     }
     ctx.out
+}
+
+/// The main window of the app that sent a notification, found by its AppUserModelID.
+/// "TelegramDesktop.TelegramDesktop" belongs to telegram.exe, "Chrome" to chrome.exe, and Yandex's id names
+/// the brand while its exe is just browser.exe.
+pub fn app_window(aumid: &str) -> Option<isize> {
+    let id = aumid.to_lowercase();
+    struct Ctx {
+        id: String,
+        best: Option<(isize, i32)>,
+    }
+    unsafe extern "system" fn each(hwnd: HWND, lp: LPARAM) -> windows::core::BOOL {
+        let ctx = &mut *(lp.0 as *mut Ctx);
+        if !IsWindowVisible(hwnd).as_bool() || GetWindowTextLengthW(hwnd) == 0 {
+            return true.into();
+        }
+        // tool windows and owned popups are not what the user means by "the app"
+        let ex = GetWindowLongW(hwnd, GWL_EXSTYLE) as u32;
+        if ex & WS_EX_TOOLWINDOW.0 != 0 || !GetWindow(hwnd, GW_OWNER).unwrap_or_default().0.is_null() {
+            return true.into();
+        }
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        let Some(exe) = exe_name(pid) else { return true.into() };
+        let stem = exe.trim_end_matches(".exe");
+        let hit = (stem.len() >= 4 && stem != "browser" && ctx.id.contains(stem))
+            || (stem == "browser" && ctx.id.contains("yandex"))
+            || (stem == "msedge" && ctx.id.contains("edge"))
+            || (stem == "telegram" && ctx.id.contains("telegram"));
+        if hit {
+            // a big window is the main one, not a floating player or a call bubble
+            let mut r = RECT::default();
+            let _ = GetWindowRect(hwnd, &mut r);
+            let area = (r.right - r.left).max(0) / 10 * ((r.bottom - r.top).max(0) / 10);
+            if ctx.best.map_or(true, |(_, a)| area > a) {
+                ctx.best = Some((hwnd.0 as isize, area));
+            }
+        }
+        true.into()
+    }
+    let mut ctx = Ctx { id, best: None };
+    unsafe {
+        let _ = EnumWindows(Some(each), LPARAM(&mut ctx as *mut Ctx as isize));
+    }
+    ctx.best.map(|(h, _)| h)
+}
+
+/// Brings a window to the front even though the island itself is not the active app:
+/// Windows refuses SetForegroundWindow from background apps unless a key was just pressed.
+pub fn bring_front(h: isize) {
+    let hwnd = HWND(h as *mut core::ffi::c_void);
+    unsafe {
+        if IsIconic(hwnd).as_bool() {
+            let _ = ShowWindow(hwnd, SW_RESTORE);
+        }
+        let alt = |up: bool| INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: INPUT_0 { ki: KEYBDINPUT { wVk: VK_MENU, dwFlags: if up { KEYEVENTF_KEYUP } else { Default::default() }, ..Default::default() } },
+        };
+        SendInput(&[alt(false), alt(true)], std::mem::size_of::<INPUT>() as i32);
+        let _ = SetForegroundWindow(hwnd);
+    }
 }
 
 /// "Song — Artist — Яндекс Музыка - Яндекс Браузер" -> ("Song", "Artist")
@@ -899,7 +976,7 @@ const BROWSERS: &[&str] = &[
 
 static EXE_CACHE: Mutex<Option<HashMap<u32, String>>> = Mutex::new(None);
 
-fn exe_name(pid: u32) -> Option<String> {
+pub fn exe_name(pid: u32) -> Option<String> {
     if let Some(n) = EXE_CACHE.lock().unwrap().as_ref().and_then(|c| c.get(&pid)) {
         return Some(n.clone());
     }
@@ -977,9 +1054,11 @@ unsafe fn foreground_is_fullscreen() -> bool {
     if cls == "Progman" || cls == "WorkerW" || cls == "Shell_TrayWnd" {
         return false;
     }
-    // ordinary maximized windows keep their caption; real fullscreen apps drop it
+    // ordinary maximized windows keep their caption; real fullscreen apps drop it.
+    // Telegram, Discord and Spotify draw their own title bar, so a maximized one has no caption either:
+    // with an auto-hidden taskbar it covers the whole screen, yet it is no game or video.
     let style = GetWindowLongW(hwnd, GWL_STYLE) as u32;
-    if style & WS_CAPTION.0 == WS_CAPTION.0 {
+    if style & WS_CAPTION.0 == WS_CAPTION.0 || IsZoomed(hwnd).as_bool() {
         return false;
     }
     let mut r = RECT::default();
@@ -1020,17 +1099,26 @@ fn slim_loop(app: AppHandle) {
 }
 
 fn fullscreen_loop(app: AppHandle) {
-    let a = app.clone();
-    std::thread::spawn(move || slim_loop(a));
-    let mut last = false;
+    let mut last = FULL_NOW.load(Ordering::SeqCst);
     loop {
         let st = unsafe { SHQueryUserNotificationState() }.unwrap_or_default();
-        let full = st == QUNS_BUSY || st == QUNS_RUNNING_D3D_FULL_SCREEN || st == QUNS_PRESENTATION_MODE
-            || unsafe { foreground_is_fullscreen() };
+        let window = unsafe { foreground_is_fullscreen() };
+        let full = st == QUNS_BUSY || st == QUNS_RUNNING_D3D_FULL_SCREEN || st == QUNS_PRESENTATION_MODE || window;
         FULL_RAW.store(full, Ordering::SeqCst);
         let full = full && FULL_MODE.load(Ordering::SeqCst) == 0;
         if full != last {
             last = full;
+            if full {
+                // the log says what hid the island, in case it hides when it shouldn't
+                let pid = unsafe {
+                    let mut pid = 0u32;
+                    GetWindowThreadProcessId(GetForegroundWindow(), Some(&mut pid));
+                    pid
+                };
+                log(&format!("hidden for fullscreen: state {:?}, window {}, app {}", st.0, window, exe_name(pid).unwrap_or_default()));
+            } else {
+                log("fullscreen ended, island back");
+            }
             FULL_NOW.store(full, Ordering::SeqCst);
             crate::apply_visibility(&app);
         }

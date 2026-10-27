@@ -1,6 +1,6 @@
 {
-  "version": "0.12.1",
-  "url": "https://raw.githubusercontent.com/stariyyded-ai/DynamicIsland/main/releases/Island-0.12.1.zip",
-  "setup": "https://raw.githubusercontent.com/stariyyded-ai/DynamicIsland/main/releases/Island-Setup-0.12.1.exe",
-  "notes": "Громкость можно менять мышкой: ползунок в плеере и перетаскивание полоски громкости."
+  "version": "0.12.2",
+  "url": "https://raw.githubusercontent.com/stariyyded-ai/DynamicIsland/main/releases/Island-0.12.2.zip",
+  "setup": "https://raw.githubusercontent.com/stariyyded-ai/DynamicIsland/main/releases/Island-Setup-0.12.2.exe",
+  "notes": "Уведомления открываются по клику, в том числе из браузера. Остров больше не пропадает: не прячется над развёрнутыми Telegram и Discord, сам возвращается поверх окон и перезапускается после сбоя."
 }
