@@ -2,6 +2,7 @@
 
 mod extra;
 mod shelf;
+mod sound;
 mod stickers;
 mod sys;
 mod update;
@@ -40,7 +41,7 @@ fn data_dir() -> PathBuf {
 fn default_settings() -> Value {
     json!({
         "theme": "dark", "size": "m", "op": 100, "top": 8, "mon": 1,
-        "hideFull": true, "dnd": false, "osd": true, "notifyOther": true, "slimBrowser": true, "fx": true, "pet": "dragon", "petColor": 0,
+        "hideFull": true, "dnd": false, "osd": true, "notifyOther": true, "slimBrowser": true, "fx": true, "sound": "soft",
         "mods": { "music": 1, "volume": 1, "brightness": 1, "layout": 1, "download": 1,
                   "clip": 1, "notes": 1, "notify": 1, "copy": 1 }
     })
@@ -116,8 +117,12 @@ fn autostart_set(on: bool) {
 fn position_island(app: &AppHandle) {
     let Some(win) = app.get_webview_window("island") else { return };
     let s = current_settings();
-    let idx = s["mon"].as_u64().unwrap_or(1).max(1) as usize - 1;
     let mons = win.available_monitors().unwrap_or_default();
+    // mon 0 means "wherever the mouse is"
+    let idx = match s["mon"].as_u64().unwrap_or(1) {
+        0 => cursor_monitor(&mons).unwrap_or(0),
+        n => n as usize - 1,
+    };
     let mon = mons.get(idx).cloned().or_else(|| win.primary_monitor().ok().flatten()).or_else(|| mons.first().cloned());
     let Some(m) = mon else { return };
     // the window spans the monitor's full width so the island sits at its true centre on any DPI
@@ -126,6 +131,45 @@ fn position_island(app: &AppHandle) {
     let _ = win.set_position(PhysicalPosition::new(m.position().x, m.position().y));
     let _ = win.set_size(tauri::PhysicalSize::new(w, h));
     let _ = win.set_position(PhysicalPosition::new(m.position().x, m.position().y));
+}
+
+fn cursor_monitor(mons: &[tauri::Monitor]) -> Option<usize> {
+    let mut pt = windows::Win32::Foundation::POINT::default();
+    unsafe { windows::Win32::UI::WindowsAndMessaging::GetCursorPos(&mut pt) }.ok()?;
+    mons.iter().position(|m| {
+        let p = m.position();
+        let sz = m.size();
+        pt.x >= p.x && pt.x < p.x + sz.width as i32 && pt.y >= p.y && pt.y < p.y + sz.height as i32
+    })
+}
+
+/// In follow mode the island moves to the monitor the mouse has settled on.
+fn follow_cursor(app: AppHandle) {
+    let mut placed: Option<usize> = None;
+    let mut seen: Option<usize> = None;
+    let mut since = std::time::Instant::now();
+    loop {
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        if current_settings()["mon"].as_u64() != Some(0) {
+            placed = None;
+            continue;
+        }
+        let Some(win) = app.get_webview_window("island") else { continue };
+        let mons = win.available_monitors().unwrap_or_default();
+        if mons.len() < 2 {
+            continue;
+        }
+        let Some(i) = cursor_monitor(&mons) else { continue };
+        if seen != Some(i) {
+            seen = Some(i);
+            since = std::time::Instant::now();
+        }
+        // a quick swipe across a monitor shouldn't drag the island along
+        if placed != Some(i) && since.elapsed() > std::time::Duration::from_millis(400) {
+            placed = Some(i);
+            position_island(&app);
+        }
+    }
 }
 
 pub fn apply_visibility(app: &AppHandle) {
@@ -180,6 +224,8 @@ fn apply_flags(s: &Value) {
     sys::SLIM_BROWSER.store(s["slimBrowser"].as_bool().unwrap_or(true), Ordering::SeqCst);
     let m = &s["mods"]["volume"];
     let vol_on = !(m == &json!(0) || m == &json!(false));
+    let snd = if s["dnd"].as_bool().unwrap_or(false) { "off" } else { s["sound"].as_str().unwrap_or("soft") };
+    *sound::SET.lock().unwrap() = snd.to_string();
     extra::REPLACE_OSD.store(vol_on && s["osd"].as_bool().unwrap_or(true), Ordering::SeqCst);
 }
 
@@ -234,6 +280,11 @@ async fn set_hit(rects: Vec<sys::HitRect>) {
 #[tauri::command]
 fn slim_state() -> bool {
     sys::SLIM_NOW.load(Ordering::SeqCst)
+}
+
+#[tauri::command]
+async fn play_sound(kind: String, set: Option<String>) {
+    sound::play(&kind, set.as_deref());
 }
 
 #[tauri::command]
@@ -389,7 +440,7 @@ fn main() {
 
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
-            get_settings, save_settings, monitors, set_hit, set_solid, slim_state, media_cmd, set_volume,
+            get_settings, save_settings, monitors, set_hit, set_solid, slim_state, play_sound, media_cmd, set_volume,
             clip_list, clip_set, note_load, note_save, open_settings_cmd, notif_open, notif_act, copy_show,
             sticker_create, sticker_get, sticker_update, sticker_resize, sticker_delete, stickers_show_all, stickers_count, reminder_action,
             shelf_list, shelf_add, shelf_remove, shelf_clear, shelf_open, shelf_drag,
@@ -468,6 +519,8 @@ fn main() {
             stickers::restore(&handle);
             let h4 = handle.clone();
             std::thread::spawn(move || stickers::reminder_loop(h4));
+            let h7 = handle.clone();
+            std::thread::spawn(move || follow_cursor(h7));
 
             // follow monitor layout changes (docking, resolution)
             let h2 = handle.clone();

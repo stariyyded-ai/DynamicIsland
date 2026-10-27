@@ -44,22 +44,6 @@ textarea{user-select:text;-webkit-user-select:text}
 @keyframes fall{0%{transform:translateY(0) scaleY(.8)}70%{transform:translateY(calc(var(--top,8px) + 10px)) scaleY(1.25)}100%{transform:translateY(calc(var(--top,8px) + 20px)) scale(1.4,.4);opacity:0}}
 .splash{position:absolute;width:8px;height:8px;margin:-4px 0 0 -4px;border-radius:50%;border:2px solid var(--dc,#4cc2ff);pointer-events:none;animation:splash .6s ease-out forwards}
 @keyframes splash{to{transform:scale(9,4);opacity:0}}
-.pet{position:absolute;left:50%;top:calc(var(--top,8px) - 6px);width:50px;height:46px;cursor:pointer;opacity:0;visibility:hidden;transition:opacity .35s,visibility .35s;z-index:4}
-.pet.on{opacity:1;visibility:visible}
-.pet-b{width:50px;height:46px;transform-origin:50% 100%}
-.pet-b svg{display:block;filter:drop-shadow(0 2px 2px rgba(0,0,0,.35))}
-.pet.idle .pet-b{animation:breath 2.8s ease-in-out infinite}
-.pet.dance .pet-b{animation:sway 2.4s ease-in-out infinite}
-.pet.sleep .pet-b{animation:breath 4s ease-in-out infinite}
-.pet.jump .pet-b{animation:jump .7s cubic-bezier(.2,.9,.3,1)}
-@keyframes breath{0%,100%{transform:scale(1,1)}50%{transform:scale(1.03,.96)}}
-@keyframes sway{0%,100%{transform:rotate(-3deg)}50%{transform:rotate(3deg) translateY(-1px)}}
-@keyframes jump{0%{transform:translateY(0)}30%{transform:translateY(-14px) rotate(-8deg)}60%{transform:translateY(0) scale(1.08,.9)}100%{transform:none}}
-.pet-fx{position:absolute;pointer-events:none;font-size:11px;font-weight:700;animation:petfx 1.3s ease-out forwards;color:#ff6b9a;text-shadow:0 1px 2px rgba(0,0,0,.4)}
-.pet-fx.z{color:#b9c6ff;font-size:10px}
-.pet-fx.fire{width:5px;height:5px;border-radius:50%;background:radial-gradient(#fff3b0,#ff9a2e 60%,#ff4d1a);animation:fire .55s ease-out forwards}
-@keyframes petfx{from{transform:translate(0,0) scale(.7);opacity:0}20%{opacity:1}to{transform:translate(var(--fx,6px),-26px) scale(1.1);opacity:0}}
-@keyframes fire{from{transform:translate(0,0) scale(.6);opacity:1}to{transform:translate(var(--fx,-14px),var(--fy,4px)) scale(1.8);opacity:0}}
 .bubble{position:absolute;left:50%;top:var(--top,8px);width:36px;height:36px;border-radius:50%;overflow:hidden;transform-origin:50% 0;cursor:pointer;opacity:0;visibility:hidden;
   background:var(--i-bg);box-shadow:0 6px 12px rgba(0,0,0,.35),inset 0 0 0 1px var(--i-rim);display:grid;place-items:center}
 .bubble svg{width:24px;height:24px}
@@ -245,7 +229,6 @@ textarea{user-select:text;-webkit-user-select:text}
 </head>
 <body>
 <div class="isl-root t-dark" id="islRoot">
-  <div class="pet" id="pet" title="Погладить"><div class="pet-b" id="petB"></div></div>
   <div class="bubble" id="bubble"></div>
 
   <div class="island" id="island">
@@ -398,7 +381,6 @@ textarea{user-select:text;-webkit-user-select:text}
   <div class="cmenu" id="cmenu"></div>
 </div>
 
-<script src="pet.js"></script>
 <script>
 (function(){
   const TA = window.__TAURI__;
@@ -433,7 +415,7 @@ textarea{user-select:text;-webkit-user-select:text}
   };
   const SIZE = {s:.86, m:1, l:1.14};
   const island = $('island'), content = $('content'), islRoot = $('islRoot'), bubble = $('bubble');
-  const shape = $('shape'), shapePath = $('shapePath'), rimPath = $('rimPath'), glowEl = $('glow'), petEl = $('pet');
+  const shape = $('shape'), shapePath = $('shapePath'), rimPath = $('rimPath'), glowEl = $('glow');
   const panels = {};
   island.querySelectorAll('.panel').forEach(p => panels[p.dataset.s] = p);
   function layoutPanels(){
@@ -441,7 +423,7 @@ textarea{user-select:text;-webkit-user-select:text}
   }
 
   /* ---------- live state ---------- */
-  let set = {theme:'dark', size:'m', op:100, top:8, hideFull:true, dnd:false, mods:{music:1,volume:1,brightness:1,layout:1,download:1,clip:1,notes:1,notify:1,copy:1}, notifyOther:true, fx:true, pet:'dragon', petColor:0};
+  let set = {theme:'dark', size:'m', op:100, top:8, hideFull:true, dnd:false, mods:{music:1,volume:1,brightness:1,layout:1,download:1,clip:1,notes:1,notify:1,copy:1}, notifyOther:true, fx:true, sound:'soft'};
   let media = null, mediaPos = 0, mediaAt = 0, lastPlayingAt = 0, covers = {};
   let vol = {v:0, muted:false}, shelf = [], dl = null, clips = [];
   let expanded = null, trans = null, cur = 'idle', hidden = false, slim = false, peek = false, peekT = null, accent = null;
@@ -502,7 +484,6 @@ textarea{user-select:text;-webkit-user-select:text}
     shapePath.setAttribute('d', d); rimPath.setAttribute('d', d);
     content.style.clipPath = 'path("' + d + '")';
     glowEl.style.borderRadius = R + 'px';
-    petEl.style.transform = 'translateX(' + (sp.dx.x - W*k/2 - 56).toFixed(1) + 'px)';
     const b = Math.max(0, sp.b.x);
     const off = (W/2 + 8 + 18) * b * k + sp.dx.x;
     bubble.style.transform = 'translateX(calc(-50% + ' + off.toFixed(2) + 'px)) scale(' + ((.35 + .65*Math.min(1.1, b)) * k).toFixed(3) + ')';
@@ -523,7 +504,6 @@ textarea{user-select:text;-webkit-user-select:text}
       if (cur === 'line'){ const r = island.getBoundingClientRect(); rects.push({x:r.left - 50, y:0, w:r.width + 100, h:10}); }
       if (bubble.style.visibility === 'visible') add(bubble, 4);
       if (menuOpen) add($('cmenu'), 4);
-      if (petEl.classList.contains('on')) add(petEl, 2);
     }
     const sig = rects.map(r => [r.x, r.y, r.w, r.h].map(Math.round).join(',')).join(';');
     if (sig !== hitSig){ hitSig = sig; invoke('set_hit', {rects}); }
@@ -742,7 +722,9 @@ textarea{user-select:text;-webkit-user-select:text}
   const DROP_TINT = {telegram:'#2aa3ef', mail:'#ffb340', call:'#34c759', remind:'#ffcc00'};
   let falling = false;
   function drop(kind, then){
-    if (!set.fx || reduce || hidden){ then(); return; }
+    // reminders already chime from the app itself
+    const ding = kind !== 'remind';
+    if (!set.fx || reduce || hidden){ if (ding) sound('notify'); then(); return; }
     const el = document.createElement('i'); el.className = 'drop';
     islRoot.style.setProperty('--dc', DROP_TINT[kind] || '#4cc2ff');
     islRoot.appendChild(el); falling = true;
@@ -754,6 +736,7 @@ textarea{user-select:text;-webkit-user-select:text}
       sp2.style.left = (rc.left + rc.width/2) + 'px'; sp2.style.top = rc.top + 'px';
       islRoot.appendChild(sp2); setTimeout(() => sp2.remove(), 650);
       poke(top, (N - 1)/2, 190, 3.5); poke(bot, (N - 1)/2, 90, 5); kick(70);
+      if (ding) sound('drop');
       then();
     }, 470);
   }
@@ -1025,7 +1008,7 @@ textarea{user-select:text;-webkit-user-select:text}
     // a burst from one chat replaces the waiting message instead of queueing up
     const same = nq.findIndex(x => x.kind === n.kind && x.title === n.title);
     if (same >= 0) nq[same] = n; else nq.push(n);
-    if (!busy && !falling){ if (n.kind === 'other') showNext(); else drop(n.kind, showNext); }
+    if (!busy && !falling){ if (n.kind === 'other'){ sound('notify'); showNext(); } else drop(n.kind, showNext); }
     else if (cur === 'notif'){ const more = nq.filter(x => x.kind !== 'call').length; const m = $('ntTxt').querySelector('.more'); if (m) m.textContent = 'ещё ' + more; else $('ntTxt').insertAdjacentHTML('beforeend', '<span class="more">ещё ' + more + '</span>'); kick(30); }
   });
   const dismissNotif = () => { document.activeElement && document.activeElement.blur(); trans = null; if (nq.length) showNext(); else render(); };
@@ -1059,7 +1042,7 @@ textarea{user-select:text;-webkit-user-select:text}
     kick(120);
   }
   listen('reminder', r => { rq.push(r); if (!(trans && trans.name === 'remind') && !falling) drop('remind', showReminder); });
-  const remAct = a => { if (a === 'done') petCheer(4); if (rCur) invoke('reminder_action', {sid: rCur.sid, idx: rCur.idx, text: rCur.text, action: a}); trans = null; if (rq.length) showReminder(); else render(); };
+  const remAct = a => { if (a === 'done') sound('done'); if (rCur) invoke('reminder_action', {sid: rCur.sid, idx: rCur.idx, text: rCur.text, action: a}); trans = null; if (rq.length) showReminder(); else render(); };
   $('rmDone').onclick = () => remAct('done');
   $('rmSnooze').onclick = () => remAct('snooze');
   $('rmShow').onclick = () => remAct('show');
@@ -1169,51 +1152,23 @@ textarea{user-select:text;-webkit-user-select:text}
   island.addEventListener('auxclick', e => { if (e.button === 1 && media){ $('mPlay').onclick(); if (cur === 'idle') expanded = null; } });
 
   /* ---------- settings ---------- */
-  /* ---------- pet ---------- */
-  const pet = {mood:'idle', until:0, blinkAt:Date.now() + 3000, blinkTill:0, flap:false, key:'', zAt:0, open:null};
-  function petFx(cls, text, fx, fy){
-    const el = document.createElement('i'); el.className = 'pet-fx ' + cls; if (text) el.textContent = text;
-    el.style.left = (cls === 'fire' ? 23 : 16 + Math.random()*12) + 'px'; el.style.top = (cls === 'fire' ? 27 : 0) + 'px';
-    el.style.setProperty('--fx', (fx != null ? fx : (Math.random()*12 - 4)) + 'px'); if (fy != null) el.style.setProperty('--fy', fy + 'px');
-    petEl.appendChild(el); setTimeout(() => el.remove(), 1350);
-  }
-  function petCheer(n){
-    pet.mood = 'happy'; pet.until = Date.now() + 1400;
-    petEl.classList.remove('jump'); void petEl.offsetWidth; petEl.classList.add('jump');
-    for (let i = 0; i < (n || 3); i++) setTimeout(() => petFx('', '♥'), i*160);
-  }
-  petEl.addEventListener('click', e => {
-    e.stopPropagation();
-    if (set.pet === 'dragon'){ for (let i = 0; i < 7; i++) setTimeout(() => petFx('fire', '', -10 - Math.random()*14, Math.random()*10 - 5), i*45); }
-    petCheer(2);
+  /* ---------- sounds ---------- */
+  // played by the app itself so they work even before anyone has clicked the island
+  function sound(kind){ if (!set.dnd && !hidden && set.sound && set.sound !== 'off') invoke('play_sound', {kind}); }
+  // a task got ticked off (a deleted sticker also lowers the count, so the sticker count must stay the same)
+  let openTasks = null, stickerCount = null;
+  listen('stickers', c => {
+    if (!c) return;
+    if (openTasks != null && c.open < openTasks && c.count === stickerCount) sound('done');
+    openTasks = c.open; stickerCount = c.count;
   });
-  function petTick(){
-    const kind = set.pet && set.pet !== 'none' && window.PET ? set.pet : null;
-    const show = !!kind && !hidden && cur !== 'line';
-    petEl.classList.toggle('on', show);
-    if (!show) return;
-    const now = Date.now(), h = new Date().getHours();
-    const music = !!(media && media.playing && mod('music'));
-    let mood = pet.until > now ? pet.mood : music ? 'dance' : (h >= 23 || h < 7) ? 'sleep' : 'idle';
-    if (now > pet.blinkAt){ pet.blinkTill = now + 160; pet.blinkAt = now + 2500 + Math.random()*4000; }
-    // under music: a slow sway, a happy look now and then, wings only once in a while
-    if (mood === 'dance') pet.flap = (now % 9000) < 450;
-    const opts = {closed: mood === 'sleep' || (mood === 'idle' && now < pet.blinkTill), happy: mood === 'happy' || (mood === 'dance' && (now % 6000) < 1600), flap: (mood === 'dance' || mood === 'happy') && pet.flap};
-    if (mood === 'happy') pet.flap = (Math.floor(now / 140) % 2) === 0;
-    const key = kind + set.petColor + JSON.stringify(opts);
-    if (key !== pet.key){ pet.key = key; $('petB').innerHTML = PET.svg(kind, +set.petColor || 0, opts); }
-    ['idle','dance','sleep'].forEach(m => petEl.classList.toggle(m, m === (mood === 'happy' ? 'idle' : mood)));
-    if (mood === 'sleep' && now - pet.zAt > 1500){ pet.zAt = now; petFx('z', 'z', 8); }
-  }
-  setInterval(petTick, 120);
-  listen('stickers', c => { if (c && pet.open != null && c.open < pet.open) petCheer(4); if (c) pet.open = c.open; });
 
   function applySettings(s){
     set = Object.assign(set, s); set.mods = Object.assign({}, set.mods, s.mods || {});
     islRoot.classList.remove('t-dark', 't-light', 't-glass'); islRoot.classList.add('t-' + set.theme);
     islRoot.style.setProperty('--i-op', set.op/100);
     islRoot.style.setProperty('--top', set.top + 'px');
-    drawIdle(); render(); pet.key = ''; petTick();
+    drawIdle(); render();
   }
   function saveSettings(patch){ applySettings(patch); invoke('save_settings', {settings: patch}); }
   listen('settings', applySettings);

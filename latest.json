@@ -1,5 +1,5 @@
 {
-  "version": "0.10.2",
-  "url": "https://raw.githubusercontent.com/stariyyded-ai/DynamicIsland/main/releases/Island-0.10.2.zip",
-  "notes": "Дракончик перерисован: без «поднятых лап», с лапками на животике и шипами на хвосте."
+  "version": "0.11.0",
+  "url": "https://raw.githubusercontent.com/stariyyded-ai/DynamicIsland/main/releases/Island-0.11.0.zip",
+  "notes": "Звуки острова с выбором набора. Остров может переезжать на монитор, где курсор. Питомец убран."
 }

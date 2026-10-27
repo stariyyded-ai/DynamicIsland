@@ -291,7 +291,7 @@ pub fn reminder_loop(app: AppHandle) {
             push_to_window(&app, &s);
             let it = &s.items[i];
             let _ = app.emit_to("island", "reminder", json!({ "sid": s.id, "idx": i, "text": it.text, "at": it.at }));
-            crate::sys::chime();
+            crate::sound::play("remind", None);
         }
     }
 }

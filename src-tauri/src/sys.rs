@@ -50,11 +50,10 @@ use windows::Win32::UI::Shell::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     EnumWindows, SetForegroundWindow, GetClassNameW, GetCursorPos, GetForegroundWindow, GetMessageW, GetWindowRect, GetWindowTextW,
-    GetWindowThreadProcessId, IsWindowVisible, GetWindowLongW, IsIconic, GWL_STYLE, WS_CAPTION, MB_ICONASTERISK, MSG, WM_HOTKEY,
+    GetWindowThreadProcessId, IsWindowVisible, GetWindowLongW, IsIconic, GWL_STYLE, WS_CAPTION, MSG, WM_HOTKEY,
 };
 use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
 use windows::Win32::Globalization::{GetLocaleInfoW, LOCALE_SABBREVLANGNAME};
-use windows::Win32::System::Diagnostics::Debug::MessageBeep;
 
 pub(crate) fn com_init() {
     unsafe {
@@ -1092,12 +1091,5 @@ fn hit_loop(app: AppHandle) {
             let _ = win.set_ignore_cursor_events(!inside);
             emit(&app, "cursor", json!({ "inside": inside }));
         }
-    }
-}
-
-
-pub fn chime() {
-    unsafe {
-        let _ = MessageBeep(MB_ICONASTERISK);
     }
 }

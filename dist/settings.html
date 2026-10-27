@@ -23,8 +23,6 @@ h1{margin:0;font-size:22px;font-weight:700;letter-spacing:-.01em}
 .seg{display:flex;flex-wrap:wrap;gap:6px}
 .seg button{font:inherit;font-size:13px;font-weight:500;color:var(--fg);background:var(--chip);border:1px solid var(--line);border-radius:999px;padding:6px 13px;cursor:pointer}
 .seg button:hover{border-color:var(--muted)}
-.pet-colors button{display:inline-flex;align-items:center;gap:6px;padding:3px 12px 3px 4px}
-.pet-colors svg{width:30px;height:27px}
 .seg button[aria-pressed="true"]{background:var(--on);color:var(--on-fg);border-color:var(--on)}
 input[type=range]{width:100%;accent-color:var(--accent)}
 .sw-row{font:inherit;font-size:13px;display:flex;align-items:center;gap:10px;color:var(--fg);background:none;border:0;cursor:pointer;padding:2px 0;text-align:left}
@@ -53,8 +51,6 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
     <h2>Вид</h2>
     <div class="set"><div class="lab">Тема</div><div class="seg" data-key="theme"><button data-v="dark">Тёмная</button><button data-v="light">Светлая</button><button data-v="glass">Стекло</button></div></div>
     <div class="set"><div class="lab">Размер</div><div class="seg" data-key="size"><button data-v="s">Компактный</button><button data-v="m">Обычный</button><button data-v="l">Крупный</button></div></div>
-    <div class="set"><div class="lab">Питомец</div><div class="seg" data-key="pet"><button data-v="none">Без питомца</button><button data-v="dragon">Дракончик</button><button data-v="cat">Котик</button><button data-v="fox">Лисёнок</button></div></div>
-    <div class="set" id="petColorRow"><div class="lab">Окрас</div><div class="seg pet-colors" data-key="petColor" id="petColors"></div></div>
     <div class="set"><label class="lab" for="op">Непрозрачность <output id="opOut"></output></label><input type="range" id="op" min="50" max="100" step="5"></div>
     <div class="set"><label class="lab" for="top">Отступ сверху <output id="topOut"></output></label><input type="range" id="top" min="0" max="40" step="2"></div>
     <div class="set"><div class="lab">Монитор</div><div class="seg" data-key="mon" id="mons"></div></div>
@@ -64,6 +60,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
     <h2>Поведение</h2>
     <div class="set"><div class="lab">В играх и полноэкранном видео</div><div class="seg" data-key="fullMode"><button data-v="hide">Прятать</button><button data-v="line">Тонкая линия</button><button data-v="show">Показывать</button></div></div>
     <button class="sw-row" data-flag="slimBrowser"><span class="sw"></span><span>Тонкая линия поверх браузера<small>Остров не закрывает вкладки и раскрывается, когда подводишь курсор к верхнему краю</small></span></button>
+    <div class="set"><div class="lab">Звуки</div><div class="seg" data-key="sound"><button data-v="soft">Мягкие</button><button data-v="drops">Капли</button><button data-v="bell">Колокольчик</button><button data-v="off">Без звука</button></div></div>
     <button class="sw-row" data-flag="fx"><span class="sw"></span><span>Эффекты<small>Свечение в цвет обложки трека и капля при важном уведомлении</small></span></button>
     <button class="sw-row" data-flag="dnd"><span class="sw"></span><span>Не беспокоить<small>Без всплывашек буфера, раскладки и завершённых загрузок</small></span></button>
     <button class="sw-row" data-flag="osd"><span class="sw"></span><span>Громкость в острове вместо плашки Windows<small>Клавиши громкости показывают уровень в острове. В играх на весь экран работает обычная плашка</small></span></button>
@@ -96,7 +93,6 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 
   <p class="foot">Остров · чтобы уведомления не дублировались, выключите баннеры для Telegram и почты в Параметры → Система → Уведомления, оставив их в центре уведомлений. Заметки и настройки хранятся в папке %APPDATA%\Island</p>
 </main>
-<script src="pet.js"></script>
 <script>
 (function(){
   const TA = window.__TAURI__;
@@ -106,18 +102,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
   let s = {mods:{}};
   $('mods').innerHTML = MODS.map(([k, n]) => '<label><input type="checkbox" data-m="' + k + '">' + n + '</label>').join('');
 
-  function drawPetColors(){
-    const kind = s.pet && s.pet !== 'none' ? s.pet : null;
-    $('petColorRow').hidden = !kind || !window.PET;
-    if (!kind || !window.PET) return;
-    const key = kind;
-    if ($('petColors').dataset.kind !== key){
-      $('petColors').dataset.kind = key;
-      $('petColors').innerHTML = PET.COLORS[kind].map((c, i) => '<button data-v="' + i + '">' + PET.svg(kind, i, {}) + c.name + '</button>').join('');
-    }
-  }
   function draw(){
-    drawPetColors();
     document.querySelectorAll('.seg[data-key]').forEach(seg => seg.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(s[seg.dataset.key]) === b.dataset.v)));
     document.querySelectorAll('[data-flag]').forEach(b => b.setAttribute('aria-pressed', !!s[b.dataset.flag]));
     document.querySelectorAll('[data-m]').forEach(c => c.checked = !!(s.mods || {})[c.dataset.m]);
@@ -128,7 +113,8 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 
   document.addEventListener('click', e => {
     const b = e.target.closest('.seg[data-key] button');
-    if (b){ const key = b.parentElement.dataset.key; save({[key]: key === 'mon' || key === 'petColor' ? +b.dataset.v : b.dataset.v, ...(key === 'pet' ? {petColor: 0} : {})}); return; }
+    if (b){ const key = b.parentElement.dataset.key; save({[key]: key === 'mon' ? +b.dataset.v : b.dataset.v});
+    if (key === 'sound' && b.dataset.v !== 'off') invoke('play_sound', {kind:'notify', set:b.dataset.v}); return; }
     const f = e.target.closest('[data-flag]');
     if (f) save({[f.dataset.flag]: !s[f.dataset.flag]});
   });
@@ -138,7 +124,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 
   invoke('monitors').then(list => {
     list = list && list.length ? list : [{index:1}];
-    $('mons').innerHTML = list.map(m => '<button data-v="' + m.index + '">' + ('Монитор ' + m.index) + (m.w ? ' · ' + m.w + '×' + m.h : '') + '</button>').join('');
+    $('mons').innerHTML = (list.length > 1 ? '<button data-v="0">Где курсор</button>' : '') + list.map(m => '<button data-v="' + m.index + '">' + ('Монитор ' + m.index) + (m.w ? ' · ' + m.w + '×' + m.h : '') + '</button>').join('');
     draw();
   });
   invoke('get_settings').then(v => { if (v){ s = v; draw(); } });
