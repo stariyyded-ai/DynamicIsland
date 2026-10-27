@@ -115,10 +115,18 @@ fn autostart_set(on: bool) {
 
 /* ----------------------------------------------------------------- window */
 
+/// Monitors in the order the settings number them: the main screen first, then the rest from left to right.
+/// Windows lists them in its own order, which put the island on a side screen by default.
+fn screens(win: &tauri::WebviewWindow) -> Vec<tauri::Monitor> {
+    let mut v = win.available_monitors().unwrap_or_default();
+    v.sort_by_key(|m| (!(m.position().x == 0 && m.position().y == 0), m.position().x, m.position().y));
+    v
+}
+
 fn position_island(app: &AppHandle) {
     let Some(win) = app.get_webview_window("island") else { return };
     let s = current_settings();
-    let mons = win.available_monitors().unwrap_or_default();
+    let mons = screens(&win);
     // mon 0 means "wherever the mouse is"
     let idx = match s["mon"].as_u64().unwrap_or(1) {
         0 => cursor_monitor(&mons).unwrap_or(0),
@@ -156,7 +164,7 @@ fn follow_cursor(app: AppHandle) {
             continue;
         }
         let Some(win) = app.get_webview_window("island") else { continue };
-        let mons = win.available_monitors().unwrap_or_default();
+        let mons = screens(&win);
         if mons.len() < 2 {
             continue;
         }
@@ -195,9 +203,43 @@ pub fn apply_visibility(app: &AppHandle) {
     }
 }
 
+static PAGE_LOADED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 #[tauri::command]
 fn page_log(msg: String) {
+    if msg.starts_with("loaded") {
+        PAGE_LOADED.store(true, Ordering::SeqCst);
+    }
     sys::log(&format!("page: {}", msg));
+}
+
+/// The island is drawn by Microsoft's WebView2. When that component is broken the window stays empty,
+/// so say so plainly and offer the page where it can be reinstalled, instead of sitting there invisible.
+fn webview_broken() {
+    static SHOWN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if SHOWN.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    sys::log("webview2 did not start, telling the user");
+    use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, IDYES, MB_ICONWARNING, MB_TOPMOST, MB_YESNO};
+    let text: Vec<u16> = "Остров не может показаться: компонент Windows «Microsoft Edge WebView2», которым он рисуется, не запускается.\n\n\
+Обычно помогает переустановить WebView2. Открыть страницу загрузки Microsoft?\n\n\
+Там нажмите «Evergreen Bootstrapper» → «Download», запустите файл, затем снова откройте Остров."
+        .encode_utf16()
+        .chain(Some(0))
+        .collect();
+    unsafe {
+        if MessageBoxW(None, PCWSTR(text.as_ptr()), w!("Остров"), MB_YESNO | MB_ICONWARNING | MB_TOPMOST) == IDYES {
+            windows::Win32::UI::Shell::ShellExecuteW(
+                None,
+                w!("open"),
+                w!("https://developer.microsoft.com/microsoft-edge/webview2/"),
+                PCWSTR::null(),
+                PCWSTR::null(),
+                windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL,
+            );
+        }
+    }
 }
 
 /// Where the island window is and whether it is shown, for the log.
@@ -322,12 +364,13 @@ async fn save_settings(app: AppHandle, settings: Value) {
 #[tauri::command]
 async fn monitors(app: AppHandle) -> Value {
     let Some(win) = app.get_webview_window("island") else { return json!([]) };
-    let list: Vec<Value> = win
-        .available_monitors()
-        .unwrap_or_default()
+    let list: Vec<Value> = screens(&win)
         .iter()
         .enumerate()
-        .map(|(i, m)| json!({ "index": i + 1, "w": m.size().width, "h": m.size().height }))
+        .map(|(i, m)| {
+            let main = m.position().x == 0 && m.position().y == 0;
+            json!({ "index": i + 1, "w": m.size().width, "h": m.size().height, "main": main })
+        })
         .collect();
     json!(list)
 }
@@ -498,7 +541,11 @@ fn main() {
     }
     let first_run = !data_dir().join("settings.json").exists();
     std::panic::set_hook(Box::new(|info| {
-        sys::log(&format!("panic: {}", info));
+        let text = format!("panic: {}", info);
+        sys::log(&text);
+        if text.contains("failed to create webview") {
+            webview_broken();
+        }
     }));
 
     tauri::Builder::default()
@@ -600,6 +647,13 @@ fn main() {
             sys::keep("follow_cursor", move || follow_cursor(h7.clone()));
             let h8 = handle.clone();
             sys::keep("watchdog", move || watchdog(h8.clone()));
+            // the webview can also die quietly and leave an empty window behind
+            std::thread::spawn(|| {
+                std::thread::sleep(std::time::Duration::from_secs(45));
+                if !PAGE_LOADED.load(Ordering::SeqCst) {
+                    webview_broken();
+                }
+            });
 
             // follow monitor layout changes (docking, resolution)
             let h2 = handle.clone();

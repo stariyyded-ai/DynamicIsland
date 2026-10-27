@@ -124,7 +124,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 
   invoke('monitors').then(list => {
     list = list && list.length ? list : [{index:1}];
-    $('mons').innerHTML = (list.length > 1 ? '<button data-v="0">Где курсор</button>' : '') + list.map(m => '<button data-v="' + m.index + '">' + ('Монитор ' + m.index) + (m.w ? ' · ' + m.w + '×' + m.h : '') + '</button>').join('');
+    $('mons').innerHTML = (list.length > 1 ? '<button data-v="0">Где курсор</button>' : '') + list.map(m => '<button data-v="' + m.index + '">' + (m.main ? 'Основной' : 'Монитор ' + m.index) + (m.w ? ' · ' + m.w + '×' + m.h : '') + '</button>').join('');
     draw();
   });
   invoke('get_settings').then(v => { if (v){ s = v; draw(); } });

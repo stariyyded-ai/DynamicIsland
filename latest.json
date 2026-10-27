@@ -1,6 +1,6 @@
 {
-  "version": "0.12.5",
-  "url": "https://raw.githubusercontent.com/stariyyded-ai/DynamicIsland/main/releases/Island-0.12.5.zip",
-  "setup": "https://raw.githubusercontent.com/stariyyded-ai/DynamicIsland/main/releases/Island-Setup-0.12.5.exe",
-  "notes": "В меню значка в трее появился пункт «Вернуть остров». Остров подробнее записывает в журнал, что с ним происходит."
+  "version": "0.12.6",
+  "url": "https://raw.githubusercontent.com/stariyyded-ai/DynamicIsland/main/releases/Island-0.12.6.zip",
+  "setup": "https://raw.githubusercontent.com/stariyyded-ai/DynamicIsland/main/releases/Island-Setup-0.12.6.exe",
+  "notes": "Остров по умолчанию открывается на основном мониторе. Если компонент Windows WebView2 сломан, остров сообщит об этом и подскажет, как починить."
 }
