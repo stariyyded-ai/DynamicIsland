@@ -1,6 +1,6 @@
 {
-  "version": "0.12.2",
-  "url": "https://raw.githubusercontent.com/stariyyded-ai/DynamicIsland/main/releases/Island-0.12.2.zip",
-  "setup": "https://raw.githubusercontent.com/stariyyded-ai/DynamicIsland/main/releases/Island-Setup-0.12.2.exe",
-  "notes": "Уведомления открываются по клику, в том числе из браузера. Остров больше не пропадает: не прячется над развёрнутыми Telegram и Discord, сам возвращается поверх окон и перезапускается после сбоя."
+  "version": "0.12.3",
+  "url": "https://raw.githubusercontent.com/stariyyded-ai/DynamicIsland/main/releases/Island-0.12.3.zip",
+  "setup": "https://raw.githubusercontent.com/stariyyded-ai/DynamicIsland/main/releases/Island-Setup-0.12.3.exe",
+  "notes": "Исправлено: в 0.12.2 остров мог пропасть с экрана из-за постоянной перезагрузки."
 }

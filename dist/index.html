@@ -597,8 +597,6 @@ textarea{user-select:text;-webkit-user-select:text}
   }
   function transient(name, ms){ trans = {name, until: Date.now() + ms}; render(); }
   setInterval(render, 300);
-  // lets the app notice if this page ever freezes, so it can bring the island back
-  setInterval(() => invoke('heartbeat').catch(() => {}), 5000); invoke('heartbeat').catch(() => {});
 
   function drawBubble(){
     const k = bubbleKind;

@@ -9,7 +9,7 @@ mod update;
 
 use serde_json::{json, Value};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::Mutex;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
@@ -195,30 +195,16 @@ pub fn apply_visibility(app: &AppHandle) {
     }
 }
 
-static LAST_BEAT: AtomicU64 = AtomicU64::new(0);
-
-fn now_ms() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
-}
-
-/// The island page calls this every few seconds while it is alive.
-#[tauri::command]
-fn heartbeat() {
-    LAST_BEAT.store(now_ms(), Ordering::SeqCst);
-}
-
 /// Keeps the island on screen: puts it back on top when another app pushed it under,
-/// shows it again if it got hidden by mistake, and reloads the page when it stopped answering.
+/// and shows it again if it got hidden by mistake.
+/// The page is never reloaded from here: Windows slows the timers of this click-through window,
+/// so a quiet page is not a frozen one.
 fn watchdog(app: AppHandle) {
-    let mut since_show = 0u32;
     loop {
         std::thread::sleep(std::time::Duration::from_secs(3));
         let Some(win) = app.get_webview_window("island") else { continue };
         let hide = sys::FULL_NOW.load(Ordering::SeqCst) || sys::USER_HIDDEN.load(Ordering::SeqCst);
         if hide {
-            // a hidden page runs its timers slowly, so silence there means nothing
-            LAST_BEAT.store(now_ms(), Ordering::SeqCst);
-            since_show = 0;
             continue;
         }
         if !win.is_visible().unwrap_or(true) {
@@ -229,13 +215,6 @@ fn watchdog(app: AppHandle) {
             unsafe {
                 let _ = SetWindowPos(HWND(h.0 as _), Some(HWND_TOPMOST), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
             }
-        }
-        since_show += 1;
-        let beat = LAST_BEAT.load(Ordering::SeqCst);
-        if beat != 0 && since_show > 3 && now_ms().saturating_sub(beat) > 25_000 {
-            sys::log("watchdog: island page stopped answering, reloading it");
-            let _ = win.reload();
-            LAST_BEAT.store(now_ms(), Ordering::SeqCst);
         }
     }
 }
@@ -493,7 +472,7 @@ fn main() {
             clip_list, clip_set, note_load, note_save, open_settings_cmd, notif_open, notif_act, copy_show,
             sticker_create, sticker_get, sticker_update, sticker_resize, sticker_delete, stickers_show_all, stickers_count, reminder_action,
             shelf_list, shelf_add, shelf_remove, shelf_clear, shelf_open, shelf_drag,
-            update_check, update_install, app_version, heartbeat
+            update_check, update_install, app_version
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
