@@ -1,6 +1,6 @@
 {
-  "version": "0.12.0",
-  "url": "https://raw.githubusercontent.com/stariyyded-ai/DynamicIsland/main/releases/Island-0.12.0.zip",
-  "setup": "https://raw.githubusercontent.com/stariyyded-ai/DynamicIsland/main/releases/Island-Setup-0.12.0.exe",
-  "notes": "Появился установщик: ярлык в «Пуске», удаление через «Параметры», обновления работают как раньше."
+  "version": "0.12.1",
+  "url": "https://raw.githubusercontent.com/stariyyded-ai/DynamicIsland/main/releases/Island-0.12.1.zip",
+  "setup": "https://raw.githubusercontent.com/stariyyded-ai/DynamicIsland/main/releases/Island-Setup-0.12.1.exe",
+  "notes": "Громкость можно менять мышкой: ползунок в плеере и перетаскивание полоски громкости."
 }

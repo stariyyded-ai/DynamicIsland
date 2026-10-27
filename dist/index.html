@@ -97,6 +97,12 @@ textarea{user-select:text;-webkit-user-select:text}
 .seek .knob{position:absolute;top:50%;width:13px;height:13px;margin:-6.5px 0 0 -6.5px;border-radius:50%;background:var(--i-fg);transform:scale(0);transition:transform .15s;box-shadow:0 1px 4px rgba(0,0,0,.4)}
 .seek:hover .knob,.seek.drag .knob{transform:scale(1)}
 .ctrls{display:flex;justify-content:center;align-items:center;gap:26px}
+.mvol{display:flex;align-items:center;gap:10px;padding:0 4px}
+.mvol svg{width:17px;height:17px;flex:none;color:var(--i-dim)}
+.mvol .seek{padding:6px 0}
+.mvn{width:26px;text-align:right;font-size:11px;font-variant-numeric:tabular-nums}
+.lvl .track{cursor:pointer}
+.lvl{touch-action:none}
 .btn{background:none;border:0;color:var(--i-fg);padding:4px;border-radius:50%;cursor:pointer;display:grid;place-items:center;font:inherit}
 .btn:hover{background:var(--i-soft2)}
 .btn svg{width:22px;height:22px;fill:currentColor}
@@ -263,6 +269,7 @@ textarea{user-select:text;-webkit-user-select:text}
           <button class="btn" title="Следующий" id="mNext"><svg viewBox="0 0 24 24"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg></button>
           <button class="btn sk" title="Вперёд на 10 секунд" id="mFwd"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.5-5.8M20 4v4h-4"/></svg>10</button>
         </div>
+        <div class="mvol"><svg viewBox="0 0 24 24" id="mvIcon"></svg><div class="seek vseek" id="vseek"><div class="track"><span id="mvBar"></span><i class="knob" id="mvKnob"></i></div></div><span class="dim mvn" id="mvN">0</span></div>
       </div></div>
 
       <div class="panel" data-s="volume"><div class="lvl" id="volBox">
@@ -394,7 +401,7 @@ textarea{user-select:text;-webkit-user-select:text}
     line:      {w:120,h:5,  r:3},
     welcome:   {w:360,h:38, r:19},
     musicMini: {w:290,h:36, r:18},
-    music:     {w:460,h:182,r:42},
+    music:     {w:460,h:214,r:42},
     volume:    {w:330,h:56, r:28},
     brightness:{w:330,h:56, r:28},
     layout:    {w:220,h:40, r:20},
@@ -604,7 +611,7 @@ textarea{user-select:text;-webkit-user-select:text}
 
   /* ---------- clicks ---------- */
   island.addEventListener('click', e => {
-    if (e.target.closest('button,textarea,input,.seek,.cbl,.nt,.rp,.hl,.sg')) return;
+    if (e.target.closest('button,textarea,input,.seek,.lvl,.cbl,.nt,.rp,.hl,.sg')) return;
     if (cur === 'remind') return;
     if (expanded){ expanded = null; render(); return; }
     if (cur === 'musicMini') expanded = 'music';
@@ -628,18 +635,49 @@ textarea{user-select:text;-webkit-user-select:text}
     $('volN').textContent = vol.muted ? 'Выкл' : vol.v;
     $('volIcon').innerHTML = (vol.muted || vol.v === 0) ? VOL_OFF : VOL_ON;
     $('volBox').classList.toggle('muted', vol.muted);
+    $('mvBar').style.width = vol.v + '%'; $('mvKnob').style.left = vol.v + '%';
+    $('mvN').textContent = vol.muted ? '0' : vol.v;
+    $('mvIcon').innerHTML = (vol.muted || vol.v === 0) ? VOL_OFF : VOL_ON;
   }
+  /* dragging a volume bar: the player's slider or the bar in the volume pop-up */
+  let volDrag = null, volSentAt = 0, volMineAt = 0;
+  function volAt(e){
+    const rc = volDrag.getBoundingClientRect();
+    const v = Math.round(Math.max(0, Math.min(1, (e.clientX - rc.left)/rc.width)) * 100);
+    vol = {v, muted:false}; drawVol(); volMineAt = Date.now();
+    if (cur === 'volume' && trans) trans.until = Date.now() + 1600;
+    const now = performance.now();
+    if (now - volSentAt > 40){ volSentAt = now; invoke('set_volume', {v}); }
+  }
+  function volStart(e, track, host){
+    if (e.button !== 0 || !mod('volume')) return;
+    e.preventDefault(); e.stopPropagation();
+    volDrag = track; host.classList.add('drag'); host.setPointerCapture(e.pointerId); volAt(e);
+    const move = ev => { if (volDrag) volAt(ev); };
+    const end = ev => {
+      if (!volDrag) return;
+      volAt(ev); invoke('set_volume', {v: vol.v}); volDrag = null; host.classList.remove('drag');
+      host.removeEventListener('pointermove', move); host.removeEventListener('pointerup', end); host.removeEventListener('pointercancel', end);
+    };
+    host.addEventListener('pointermove', move); host.addEventListener('pointerup', end); host.addEventListener('pointercancel', end);
+  }
+  $('vseek').addEventListener('pointerdown', e => volStart(e, $('vseek').querySelector('.track'), $('vseek')));
+  $('volBox').addEventListener('pointerdown', e => volStart(e, $('volBox').querySelector('.track'), $('volBox')));
   listen('volume', p => {
     const up = p.v > vol.v;
+    if (volDrag) return;
     vol = {v:p.v, muted:p.muted}; drawVol();
     if (p.initial || !mod('volume')) return;
+    // our own slider moved it: the player already shows the level, no pop-up needed
+    if (Date.now() - volMineAt < 1200 && cur !== 'volume') return;
     transient('volume', 1600); kick(up ? 50 : -50);
   });
   island.addEventListener('wheel', e => {
     e.preventDefault();
     if (!mod('volume')) return;
     const v = Math.max(0, Math.min(100, vol.v + (e.deltaY < 0 ? 2 : -2)));
-    vol = {v, muted:false}; drawVol(); invoke('set_volume', {v});
+    vol = {v, muted:false}; drawVol(); invoke('set_volume', {v}); volMineAt = Date.now();
+    if (cur === 'music') return;
     transient('volume', 1600); kick(e.deltaY < 0 ? 35 : -35);
   }, {passive:false});
   listen('brightness', p => {
@@ -758,7 +796,7 @@ textarea{user-select:text;-webkit-user-select:text}
     $('mIcon').innerHTML = media.playing ? '<path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/>' : '<path d="M8 5v14l11-7z"/>';
     $('mPlay').title = media.playing ? 'Пауза' : 'Играть';
     $('prog').hidden = !(media.dur > 0);
-    const mh = media.dur > 0 ? 182 : 150;
+    const mh = media.dur > 0 ? 214 : 182;
     if (S.music.h !== mh){ S.music.h = mh; layoutPanels(); setTarget(); }
     $('mDur').textContent = fmt(media.dur);
     drawPos();
