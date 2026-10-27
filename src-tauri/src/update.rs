@@ -122,6 +122,8 @@ pub fn install(app: AppHandle) {
          Copy-Item -Force -Path {src_dll} -Destination {dir}\r\n\
          Copy-Item -Force -Path {src_readme} -Destination {dir}\r\n\
          Copy-Item -Force -Path {src_exe} -Destination {dst_exe}\r\n\
+         $k = 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Island'\r\n\
+         if ((Get-ItemProperty -Path $k -Name InstallLocation).InstallLocation -eq {dir}) {{ Set-ItemProperty -Path $k -Name DisplayVersion -Value {ver} }}\r\n\
          Start-Process -FilePath {dst_exe}\r\n",
         pid = std::process::id(),
         src_dll = q(&unpacked.join("Island").join("WebView2Loader.dll").to_string_lossy()),
@@ -129,6 +131,7 @@ pub fn install(app: AppHandle) {
         src_exe = q(&new_exe.to_string_lossy()),
         dir = q(&dir.to_string_lossy()),
         dst_exe = q(&dir.join(&exe_name).to_string_lossy()),
+        ver = q(m["version"].as_str().unwrap_or("")),
     );
     // a BOM makes Windows PowerShell read Cyrillic folder names correctly
     let ps1 = tmp.join("replace.ps1");
