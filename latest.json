@@ -1,5 +1,5 @@
 {
-  "version": "0.8.0",
-  "url": "https://raw.githubusercontent.com/stariyyded-ai/DynamicIsland/main/releases/Island-0.8.0.zip",
-  "notes": "Когда открыт браузер, остров превращается в тонкую линию и не закрывает вкладки. Подведите курсор к верхнему краю, и он раскроется."
+  "version": "0.8.1",
+  "url": "https://raw.githubusercontent.com/stariyyded-ai/DynamicIsland/main/releases/Island-0.8.1.zip",
+  "notes": "Музыка из Яндекс Браузера теперь видна на острове. Остров быстрее сворачивается в линию, когда открываешь браузер."
 }

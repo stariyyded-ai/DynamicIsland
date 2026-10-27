@@ -17,10 +17,13 @@ use windows::Media::Control::{
     GlobalSystemMediaTransportControlsSessionPlaybackStatus as PlaybackStatus,
 };
 use windows::Storage::Streams::DataReader;
-use windows::Win32::Foundation::{CloseHandle, HANDLE, HGLOBAL, HWND, POINT, RECT};
+use windows::Win32::Foundation::{CloseHandle, HANDLE, HGLOBAL, HWND, LPARAM, POINT, RECT};
 use windows::Win32::System::Threading::{OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION};
-use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
-use windows::Win32::Media::Audio::{eConsole, eRender, IMMDeviceEnumerator, MMDeviceEnumerator};
+use windows::Win32::Media::Audio::Endpoints::{IAudioEndpointVolume, IAudioMeterInformation};
+use windows::Win32::Media::Audio::{
+    eConsole, eRender, AudioSessionStateActive, IAudioSessionControl2, IAudioSessionManager2, IMMDeviceEnumerator, MMDeviceEnumerator,
+};
+use windows::core::Interface;
 use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CoInitializeSecurity, CoSetProxyBlanket, CLSCTX_ALL,
     CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, EOAC_NONE, RPC_C_AUTHN_LEVEL_CALL,
@@ -38,15 +41,16 @@ use windows::Win32::System::Wmi::{
     IWbemLocator, WbemLocator, WBEM_FLAG_FORWARD_ONLY, WBEM_FLAG_RETURN_IMMEDIATELY, WBEM_INFINITE,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetKeyboardLayout, RegisterHotKey, MOD_NOREPEAT, MOD_SHIFT, MOD_WIN,
+    GetKeyboardLayout, RegisterHotKey, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, MOD_NOREPEAT,
+    MOD_SHIFT, MOD_WIN, VIRTUAL_KEY, VK_MEDIA_NEXT_TRACK, VK_MEDIA_PLAY_PAUSE, VK_MEDIA_PREV_TRACK,
 };
 use windows::Win32::UI::Shell::{
     DragQueryFileW, SHQueryUserNotificationState, HDROP, QUNS_BUSY, QUNS_PRESENTATION_MODE,
     QUNS_RUNNING_D3D_FULL_SCREEN,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetClassNameW, GetCursorPos, GetForegroundWindow, GetMessageW, GetWindowRect,
-    GetWindowThreadProcessId, GetWindowLongW, IsIconic, GWL_STYLE, WS_CAPTION, MB_ICONASTERISK, MSG, WM_HOTKEY,
+    EnumWindows, GetClassNameW, GetCursorPos, GetForegroundWindow, GetMessageW, GetWindowRect, GetWindowTextW,
+    GetWindowThreadProcessId, IsWindowVisible, GetWindowLongW, IsIconic, GWL_STYLE, WS_CAPTION, MB_ICONASTERISK, MSG, WM_HOTKEY,
 };
 use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
 use windows::Win32::Globalization::{GetLocaleInfoW, LOCALE_SABBREVLANGNAME};
@@ -166,8 +170,150 @@ fn run_media_cmd(s: &Session, cmd: &str, pos: Option<f64>) {
     log(&format!("media {} -> {:?}", cmd, r));
 }
 
+/// The playing session wins over whatever Windows calls "current", which is often a paused app.
+fn pick_session(m: &SessionManager, last_list: &mut String) -> (Option<Session>, bool) {
+    let mut all = Vec::new();
+    if let Ok(list) = m.GetSessions() {
+        for s in list {
+            let id = s.SourceAppUserModelId().map(|h| h.to_string()).unwrap_or_default();
+            let playing = s.GetPlaybackInfo().and_then(|i| i.PlaybackStatus()).map(|st| st == PlaybackStatus::Playing).unwrap_or(false);
+            all.push((s, id, playing));
+        }
+    }
+    let desc = all.iter().map(|(_, id, p)| format!("{}{}", id, if *p { "*" } else { "" })).collect::<Vec<_>>().join(", ");
+    if desc != *last_list {
+        log(&format!("media sessions: [{}]", desc));
+        *last_list = desc;
+    }
+    if let Some((s, _, _)) = all.iter().find(|(_, _, p)| *p) {
+        return (Some(s.clone()), true);
+    }
+    let cur = m.GetCurrentSession().ok().or_else(|| all.first().map(|(s, _, _)| s.clone()));
+    (cur, false)
+}
+
+struct BrowserSound {
+    exe: String,
+    label: String,
+    title: String,
+    artist: String,
+}
+
+/// A browser process that is making sound right now, with a title taken from its window.
+unsafe fn browser_sound() -> Option<BrowserSound> {
+    let en: IMMDeviceEnumerator = CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).ok()?;
+    let dev = en.GetDefaultAudioEndpoint(eRender, eConsole).ok()?;
+    let mgr: IAudioSessionManager2 = dev.Activate(CLSCTX_ALL, None).ok()?;
+    let list = mgr.GetSessionEnumerator().ok()?;
+    let mut exe = None;
+    for i in 0..list.GetCount().unwrap_or(0) {
+        let Ok(ctl) = list.GetSession(i) else { continue };
+        if ctl.GetState().map(|st| st != AudioSessionStateActive).unwrap_or(true) {
+            continue;
+        }
+        let loud = ctl.cast::<IAudioMeterInformation>().ok().and_then(|m| m.GetPeakValue().ok()).unwrap_or(0.0) > 0.0005;
+        if !loud {
+            continue;
+        }
+        let Ok(c2) = ctl.cast::<IAudioSessionControl2>() else { continue };
+        let pid = c2.GetProcessId().unwrap_or(0);
+        if pid == 0 {
+            continue;
+        }
+        if let Some(name) = exe_name(pid) {
+            if BROWSERS.contains(&name.as_str()) {
+                exe = Some(name);
+                break;
+            }
+        }
+    }
+    let exe = exe?;
+    let titles = window_titles(&exe);
+    let music = ["яндекс музык", "yandex music", "youtube", "vk музыка", "vk music", "звук", "zvuk", "spotify", "soundcloud", "музыка"];
+    let pick = titles.iter().find(|t| music.iter().any(|m| t.to_lowercase().contains(m))).cloned();
+    let label = match exe.as_str() {
+        "browser.exe" | "yandex.exe" => "Яндекс Браузер",
+        "chrome.exe" => "Chrome",
+        "msedge.exe" => "Edge",
+        "firefox.exe" => "Firefox",
+        "opera.exe" | "opera_gx.exe" => "Opera",
+        _ => "Браузер",
+    }
+    .to_string();
+    let Some(t) = pick else {
+        return Some(BrowserSound { exe, label: label.clone(), title: "Звук в браузере".into(), artist: label });
+    };
+    let (title, artist) = split_title(&t);
+    Some(BrowserSound { exe, label, title, artist })
+}
+
+fn window_titles(exe: &str) -> Vec<String> {
+    struct Ctx {
+        exe: String,
+        out: Vec<String>,
+    }
+    unsafe extern "system" fn each(hwnd: HWND, lp: LPARAM) -> windows::core::BOOL {
+        let ctx = &mut *(lp.0 as *mut Ctx);
+        if !IsWindowVisible(hwnd).as_bool() {
+            return true.into();
+        }
+        let mut buf = [0u16; 512];
+        let n = GetWindowTextW(hwnd, &mut buf);
+        if n <= 0 {
+            return true.into();
+        }
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        if exe_name(pid).as_deref() == Some(ctx.exe.as_str()) {
+            ctx.out.push(String::from_utf16_lossy(&buf[..n as usize]));
+        }
+        true.into()
+    }
+    let mut ctx = Ctx { exe: exe.to_string(), out: Vec::new() };
+    unsafe {
+        let _ = EnumWindows(Some(each), LPARAM(&mut ctx as *mut Ctx as isize));
+    }
+    ctx.out
+}
+
+/// "Song — Artist — Яндекс Музыка - Яндекс Браузер" -> ("Song", "Artist")
+fn split_title(t: &str) -> (String, String) {
+    let noise = ["браузер", "browser", "chrome", "edge", "firefox", "opera", "яндекс музык", "yandex music", "youtube", "слушать", "vk", "звук"];
+    let parts: Vec<String> = t
+        .split([' ', ' '].as_slice())
+        .collect::<Vec<_>>()
+        .join(" ")
+        .split(" — ")
+        .flat_map(|p| p.split(" - ").map(|x| x.trim().to_string()).collect::<Vec<_>>())
+        .filter(|p| !p.is_empty() && !noise.iter().any(|n| p.to_lowercase().contains(n)))
+        .collect();
+    match parts.len() {
+        0 => (t.to_string(), String::new()),
+        1 => (parts[0].clone(), String::new()),
+        _ => (parts[0].clone(), parts[1..].join(", ")),
+    }
+}
+
+fn media_key(cmd: &str) {
+    let vk = match cmd {
+        "toggle" => VK_MEDIA_PLAY_PAUSE,
+        "next" => VK_MEDIA_NEXT_TRACK,
+        "prev" => VK_MEDIA_PREV_TRACK,
+        _ => return,
+    };
+    let key = |vk: VIRTUAL_KEY, up: bool| INPUT {
+        r#type: INPUT_KEYBOARD,
+        Anonymous: INPUT_0 { ki: KEYBDINPUT { wVk: vk, dwFlags: if up { KEYEVENTF_KEYUP } else { Default::default() }, ..Default::default() } },
+    };
+    unsafe {
+        SendInput(&[key(vk, false), key(vk, true)], std::mem::size_of::<INPUT>() as i32);
+    }
+    log(&format!("media {} -> media key", cmd));
+}
+
 fn media_loop(app: AppHandle) {
     com_init();
+    let mut last_list = String::new();
     let (tx, rx) = std::sync::mpsc::channel::<(String, Option<f64>)>();
     *MEDIA_TX.lock().unwrap() = Some(tx);
     let mut mgr = None;
@@ -182,9 +328,36 @@ fn media_loop(app: AppHandle) {
                 continue;
             }
         }
-        let session = mgr.as_ref().and_then(|m| {
-            m.GetCurrentSession().ok().or_else(|| m.GetSessions().ok().and_then(|l| l.GetAt(0).ok()))
-        });
+        let (session, any_playing) = pick_session(mgr.as_ref().unwrap(), &mut last_list);
+        // some browsers (Yandex among them) play without telling Windows what is playing;
+        // then the sound itself and the window title are all we have
+        if !any_playing {
+            if let Some(b) = unsafe { browser_sound() } {
+                let key = format!("{}|{}", b.exe, b.title);
+                let payload = json!({
+                    "key": key, "src": "web", "label": b.label, "title": b.title, "artist": b.artist,
+                    "playing": true, "pos": 0, "dur": 0
+                });
+                let sig = format!("{}|fallback", key);
+                if sig != last_payload || last_send.elapsed() > Duration::from_secs(4) {
+                    if sig != last_payload {
+                        log(&format!("media: no SMTC session, sound from {} \"{}\"", b.exe, b.title));
+                    }
+                    last_payload = sig;
+                    last_send = Instant::now();
+                    emit(&app, "media", payload);
+                }
+                if key != last_key {
+                    last_key = key;
+                    emit(&app, "media-cover", json!({ "key": last_key, "data": null }));
+                }
+                if let Ok((c, _)) = rx.recv_timeout(Duration::from_millis(900)) {
+                    media_key(&c);
+                    last_payload.clear();
+                }
+                continue;
+            }
+        }
         let Some(s) = session else {
             if !last_key.is_empty() || last_payload.is_empty() {
                 last_key.clear();
@@ -658,7 +831,23 @@ const BROWSERS: &[&str] = &[
     "vivaldi.exe", "arc.exe", "yandex.exe", "chromium.exe", "librewolf.exe", "waterfox.exe", "zen.exe", "thorium.exe",
 ];
 
+static EXE_CACHE: Mutex<Option<HashMap<u32, String>>> = Mutex::new(None);
+
 fn exe_name(pid: u32) -> Option<String> {
+    if let Some(n) = EXE_CACHE.lock().unwrap().as_ref().and_then(|c| c.get(&pid)) {
+        return Some(n.clone());
+    }
+    let n = exe_name_raw(pid)?;
+    let mut c = EXE_CACHE.lock().unwrap();
+    let c = c.get_or_insert_with(HashMap::new);
+    if c.len() > 500 {
+        c.clear();
+    }
+    c.insert(pid, n.clone());
+    Some(n)
+}
+
+fn exe_name_raw(pid: u32) -> Option<String> {
     unsafe {
         let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
         let mut buf = [0u16; 520];
@@ -740,21 +929,34 @@ unsafe fn foreground_is_fullscreen() -> bool {
     r.left <= m.left && r.top <= m.top && r.right >= m.right && r.bottom >= m.bottom
 }
 
-fn fullscreen_loop(app: AppHandle) {
-    let mut last = false;
+/// Checked often and cheaply so the island gets out of the way as soon as a browser comes to the front.
+fn slim_loop(app: AppHandle) {
     let mut slim = false;
     let mut first = true;
+    let mut n = 0u32;
     loop {
-        let island = app.get_webview_window("island").and_then(|w| w.hwnd().ok());
-        if let Some(h) = island {
-            let want = SLIM_BROWSER.load(Ordering::SeqCst) && unsafe { browser_under_island(HWND(h.0)) }.unwrap_or(slim);
-            if want != slim || first {
-                first = false;
-                slim = want;
-                SLIM_NOW.store(slim, Ordering::SeqCst);
-                emit(&app, "slim", json!({ "on": slim }));
-            }
+        sleep(Duration::from_millis(100));
+        // process ids get reused, so the name cache can't live forever
+        n += 1;
+        if n % 600 == 0 {
+            *EXE_CACHE.lock().unwrap() = None;
         }
+        let Some(h) = app.get_webview_window("island").and_then(|w| w.hwnd().ok()) else { continue };
+        let want = SLIM_BROWSER.load(Ordering::SeqCst) && unsafe { browser_under_island(HWND(h.0)) }.unwrap_or(slim);
+        if want != slim || first {
+            first = false;
+            slim = want;
+            SLIM_NOW.store(slim, Ordering::SeqCst);
+            emit(&app, "slim", json!({ "on": slim }));
+        }
+    }
+}
+
+fn fullscreen_loop(app: AppHandle) {
+    let a = app.clone();
+    std::thread::spawn(move || slim_loop(a));
+    let mut last = false;
+    loop {
         let st = unsafe { SHQueryUserNotificationState() }.unwrap_or_default();
         let full = st == QUNS_BUSY || st == QUNS_RUNNING_D3D_FULL_SCREEN || st == QUNS_PRESENTATION_MODE
             || unsafe { foreground_is_fullscreen() };
