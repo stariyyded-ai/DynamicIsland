@@ -17,11 +17,11 @@ use windows::Media::Control::{
     GlobalSystemMediaTransportControlsSessionPlaybackStatus as PlaybackStatus,
 };
 use windows::Storage::Streams::DataReader;
-use windows::Win32::Foundation::{CloseHandle, HANDLE, HGLOBAL, HWND, LPARAM, POINT, RECT, WPARAM};
+use windows::Win32::Foundation::{CloseHandle, HANDLE, HGLOBAL, HWND, LPARAM, POINT, RECT};
 use windows::Win32::System::Threading::{OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION};
 use windows::Win32::Media::Audio::Endpoints::{IAudioEndpointVolume, IAudioMeterInformation};
 use windows::Win32::Media::Audio::{
-    eConsole, eRender, AudioSessionStateActive, IAudioSessionControl2, IAudioSessionManager2, IMMDeviceEnumerator, MMDeviceEnumerator,
+    eConsole, eRender, AudioSessionStateActive, IAudioSessionControl, IAudioSessionControl2, ISimpleAudioVolume, IAudioSessionManager2, IMMDeviceEnumerator, MMDeviceEnumerator,
 };
 use windows::core::Interface;
 use windows::Win32::System::Com::{
@@ -41,14 +41,15 @@ use windows::Win32::System::Wmi::{
     IWbemLocator, WbemLocator, WBEM_FLAG_FORWARD_ONLY, WBEM_FLAG_RETURN_IMMEDIATELY, WBEM_INFINITE,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetKeyboardLayout, RegisterHotKey, MOD_NOREPEAT, MOD_SHIFT, MOD_WIN,
+    GetKeyboardLayout, RegisterHotKey, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, MOD_NOREPEAT,
+    MOD_SHIFT, MOD_WIN, VK_MEDIA_NEXT_TRACK, VK_MEDIA_PLAY_PAUSE, VK_MEDIA_PREV_TRACK,
 };
 use windows::Win32::UI::Shell::{
     DragQueryFileW, SHQueryUserNotificationState, HDROP, QUNS_BUSY, QUNS_PRESENTATION_MODE,
     QUNS_RUNNING_D3D_FULL_SCREEN,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, PostMessageW, WM_APPCOMMAND, GetClassNameW, GetCursorPos, GetForegroundWindow, GetMessageW, GetWindowRect, GetWindowTextW,
+    EnumWindows, SetForegroundWindow, GetClassNameW, GetCursorPos, GetForegroundWindow, GetMessageW, GetWindowRect, GetWindowTextW,
     GetWindowThreadProcessId, IsWindowVisible, GetWindowLongW, IsIconic, GWL_STYLE, WS_CAPTION, MB_ICONASTERISK, MSG, WM_HOTKEY,
 };
 use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
@@ -196,37 +197,60 @@ struct BrowserSound {
     label: String,
     title: String,
     artist: String,
+    playing: bool,
 }
 
-/// A browser process that is making sound right now, with a title taken from its window.
-unsafe fn browser_sound() -> Option<BrowserSound> {
-    let en: IMMDeviceEnumerator = CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).ok()?;
-    let dev = en.GetDefaultAudioEndpoint(eRender, eConsole).ok()?;
-    let mgr: IAudioSessionManager2 = dev.Activate(CLSCTX_ALL, None).ok()?;
-    let list = mgr.GetSessionEnumerator().ok()?;
-    let mut exe = None;
+/// Every browser audio session on the default output, with whether it is making sound right now.
+unsafe fn browser_sessions() -> Vec<(String, IAudioSessionControl, bool)> {
+    let mut out = Vec::new();
+    let Ok(en) = CoCreateInstance::<_, IMMDeviceEnumerator>(&MMDeviceEnumerator, None, CLSCTX_ALL) else { return out };
+    let Ok(dev) = en.GetDefaultAudioEndpoint(eRender, eConsole) else { return out };
+    let Ok(mgr) = dev.Activate::<IAudioSessionManager2>(CLSCTX_ALL, None) else { return out };
+    let Ok(list) = mgr.GetSessionEnumerator() else { return out };
     for i in 0..list.GetCount().unwrap_or(0) {
         let Ok(ctl) = list.GetSession(i) else { continue };
-        if ctl.GetState().map(|st| st != AudioSessionStateActive).unwrap_or(true) {
-            continue;
-        }
-        let loud = ctl.cast::<IAudioMeterInformation>().ok().and_then(|m| m.GetPeakValue().ok()).unwrap_or(0.0) > 0.0005;
-        if !loud {
-            continue;
-        }
         let Ok(c2) = ctl.cast::<IAudioSessionControl2>() else { continue };
         let pid = c2.GetProcessId().unwrap_or(0);
-        if pid == 0 {
+        let Some(name) = (pid != 0).then(|| exe_name(pid)).flatten() else { continue };
+        if !BROWSERS.contains(&name.as_str()) {
             continue;
         }
-        if let Some(name) = exe_name(pid) {
-            if BROWSERS.contains(&name.as_str()) {
-                exe = Some(name);
-                break;
+        let active = ctl.GetState().map(|st| st == AudioSessionStateActive).unwrap_or(false);
+        let loud = active && ctl.cast::<IAudioMeterInformation>().ok().and_then(|m| m.GetPeakValue().ok()).unwrap_or(0.0) > 0.0005;
+        out.push((name, ctl, loud));
+    }
+    out
+}
+
+/// The browser we muted to stand in for a pause, when the browser itself would not listen.
+static MUTED_EXE: Mutex<Option<String>> = Mutex::new(None);
+
+unsafe fn set_browser_mute(exe: &str, mute: bool) {
+    for (name, ctl, _) in browser_sessions() {
+        if name == exe {
+            if let Ok(v) = ctl.cast::<ISimpleAudioVolume>() {
+                let _ = v.SetMute(mute, std::ptr::null());
             }
         }
     }
-    let exe = exe?;
+}
+
+/// A browser process that is making sound right now (or that we paused), with a title taken from its window.
+unsafe fn browser_sound() -> Option<BrowserSound> {
+    let sessions = browser_sessions();
+    let muted = MUTED_EXE.lock().unwrap().clone();
+    let (exe, playing) = match muted {
+        Some(e) => {
+            // the tab went quiet on its own (paused or closed in the browser): nothing left to stand in for
+            if !sessions.iter().any(|(n, c, _)| n == &e && c.GetState().map(|st| st == AudioSessionStateActive).unwrap_or(false)) {
+                set_browser_mute(&e, false);
+                *MUTED_EXE.lock().unwrap() = None;
+                return None;
+            }
+            (e, false)
+        }
+        None => (sessions.iter().find(|(_, _, loud)| *loud).map(|(n, _, _)| n.clone())?, true),
+    };
     let wins = window_titles(&exe);
     let titles: Vec<String> = wins.iter().map(|(_, t)| t.clone()).collect();
     let music = ["яндекс музык", "yandex music", "youtube", "vk музыка", "vk music", "звук", "zvuk", "spotify", "soundcloud", "музыка"];
@@ -243,10 +267,10 @@ unsafe fn browser_sound() -> Option<BrowserSound> {
     }
     .to_string();
     let Some(t) = pick else {
-        return Some(BrowserSound { exe, label: label.clone(), title: "Звук в браузере".into(), artist: label });
+        return Some(BrowserSound { exe, label: label.clone(), title: "Звук в браузере".into(), artist: label, playing });
     };
     let (title, artist) = split_title(&t);
-    Some(BrowserSound { exe, label, title, artist })
+    Some(BrowserSound { exe, label, title, artist, playing })
 }
 
 /// The browser window the fallback player last saw making sound.
@@ -299,16 +323,22 @@ fn split_title(t: &str) -> (String, String) {
     }
 }
 
-/// Without a Windows media session the browser window is told directly, the way a keyboard's media keys
-/// would tell it. Global media keys are not used here: they would wake whatever other player is paused.
-fn media_key(cmd: &str) {
-    const APPCOMMAND_MEDIA_NEXTTRACK: isize = 11;
-    const APPCOMMAND_MEDIA_PREVIOUSTRACK: isize = 12;
-    const APPCOMMAND_MEDIA_PLAY_PAUSE: isize = 14;
-    let ac = match cmd {
-        "toggle" => APPCOMMAND_MEDIA_PLAY_PAUSE,
-        "next" => APPCOMMAND_MEDIA_NEXTTRACK,
-        "prev" => APPCOMMAND_MEDIA_PREVIOUSTRACK,
+/// Without a Windows media session the browser is driven the way a person would: its window is brought
+/// forward for a moment and gets the media key, then focus goes back. If the page still plays after a
+/// pause, the browser is muted instead so the button never does nothing.
+fn browser_cmd(cmd: &str, exe: &str) {
+    if cmd == "toggle" {
+        let muted = MUTED_EXE.lock().unwrap().take();
+        if let Some(e) = muted {
+            unsafe { set_browser_mute(&e, false) };
+            log("media toggle -> browser unmuted");
+            return;
+        }
+    }
+    let vk = match cmd {
+        "toggle" => VK_MEDIA_PLAY_PAUSE,
+        "next" => VK_MEDIA_NEXT_TRACK,
+        "prev" => VK_MEDIA_PREV_TRACK,
         _ => return,
     };
     let h = SOUND_HWND.load(Ordering::SeqCst);
@@ -316,8 +346,33 @@ fn media_key(cmd: &str) {
         return;
     }
     let hwnd = HWND(h as *mut core::ffi::c_void);
-    let r = unsafe { PostMessageW(Some(hwnd), WM_APPCOMMAND, WPARAM(h as usize), LPARAM(ac << 16)) };
-    log(&format!("media {} -> app command to browser window: {:?}", cmd, r));
+    unsafe {
+        let prev = GetForegroundWindow();
+        let _ = SetForegroundWindow(hwnd);
+        sleep(Duration::from_millis(70));
+        let key = |up: bool| INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: INPUT_0 { ki: KEYBDINPUT { wVk: vk, dwFlags: if up { KEYEVENTF_KEYUP } else { Default::default() }, ..Default::default() } },
+        };
+        SendInput(&[key(false), key(true)], std::mem::size_of::<INPUT>() as i32);
+        sleep(Duration::from_millis(90));
+        if !prev.0.is_null() && prev != hwnd {
+            let _ = SetForegroundWindow(prev);
+        }
+    }
+    if cmd != "toggle" {
+        log(&format!("media {} -> browser window key", cmd));
+        return;
+    }
+    sleep(Duration::from_millis(900));
+    let still = unsafe { browser_sessions() }.iter().any(|(n, _, loud)| n == exe && *loud);
+    if still {
+        unsafe { set_browser_mute(exe, true) };
+        *MUTED_EXE.lock().unwrap() = Some(exe.to_string());
+        log("media toggle -> browser ignored the key, muted instead");
+    } else {
+        log("media toggle -> browser paused");
+    }
 }
 
 fn media_loop(app: AppHandle) {
@@ -345,9 +400,9 @@ fn media_loop(app: AppHandle) {
                 let key = format!("{}|{}", b.exe, b.title);
                 let payload = json!({
                     "key": key, "src": "web", "label": b.label, "title": b.title, "artist": b.artist,
-                    "playing": true, "pos": 0, "dur": 0
+                    "playing": b.playing, "pos": 0, "dur": 0
                 });
-                let sig = format!("{}|fallback", key);
+                let sig = format!("{}|{}|fallback", key, b.playing);
                 if sig != last_payload || last_send.elapsed() > Duration::from_secs(4) {
                     if sig != last_payload {
                         log(&format!("media: no SMTC session, sound from {} \"{}\"", b.exe, b.title));
@@ -361,7 +416,7 @@ fn media_loop(app: AppHandle) {
                     emit(&app, "media-cover", json!({ "key": last_key, "data": null }));
                 }
                 if let Ok((c, _)) = rx.recv_timeout(Duration::from_millis(900)) {
-                    media_key(&c);
+                    browser_cmd(&c, &b.exe);
                     last_payload.clear();
                 }
                 continue;

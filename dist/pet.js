@@ -50,7 +50,8 @@
   function dragon(p, o, g){
     const wing = side => {
       const mirror = side > 0 ? ' transform="translate(60 0) scale(-1 1)"' : '';
-      const rot = o.flap ? ' transform="rotate(26 20 34)"' : ' transform="rotate(-4 20 34)"';
+      // tucked small behind the head at rest; spread out for a happy flap
+      const rot = o.flap ? ' transform="translate(20 36) rotate(-12) scale(.95) translate(-20 -36)"' : ' transform="translate(21 36) rotate(32) scale(.62) translate(-20 -36)"';
       return '<g' + mirror + '><g' + rot + '><path d="M20 34 C12 30 5 24 3 15 C7 18 9 18 11 17 C10 21 12 23 14 23 C14 27 16 29 19 29 Z" fill="' + p.w + '"' + ln() + '/>' +
         '<path d="M19 32 C13 28 8 22 6 18 M19 31 C15 27 13 24 12 20" fill="none" stroke="' + p.wm + '" stroke-width=".9" stroke-linecap="round" opacity=".8"/></g></g>';
     };

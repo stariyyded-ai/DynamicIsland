@@ -49,11 +49,11 @@ textarea{user-select:text;-webkit-user-select:text}
 .pet-b{width:50px;height:46px;transform-origin:50% 100%}
 .pet-b svg{display:block;filter:drop-shadow(0 2px 2px rgba(0,0,0,.35))}
 .pet.idle .pet-b{animation:breath 2.8s ease-in-out infinite}
-.pet.dance .pet-b{animation:hop .5s cubic-bezier(.3,.6,.4,1) infinite}
+.pet.dance .pet-b{animation:sway 2.4s ease-in-out infinite}
 .pet.sleep .pet-b{animation:breath 4s ease-in-out infinite}
 .pet.jump .pet-b{animation:jump .7s cubic-bezier(.2,.9,.3,1)}
 @keyframes breath{0%,100%{transform:scale(1,1)}50%{transform:scale(1.03,.96)}}
-@keyframes hop{0%,100%{transform:translateY(0) scale(1.04,.94)}40%{transform:translateY(-5px) scale(.97,1.04)}}
+@keyframes sway{0%,100%{transform:rotate(-3deg)}50%{transform:rotate(3deg) translateY(-1px)}}
 @keyframes jump{0%{transform:translateY(0)}30%{transform:translateY(-14px) rotate(-8deg)}60%{transform:translateY(0) scale(1.08,.9)}100%{transform:none}}
 .pet-fx{position:absolute;pointer-events:none;font-size:11px;font-weight:700;animation:petfx 1.3s ease-out forwards;color:#ff6b9a;text-shadow:0 1px 2px rgba(0,0,0,.4)}
 .pet-fx.z{color:#b9c6ff;font-size:10px}
@@ -1196,8 +1196,9 @@ textarea{user-select:text;-webkit-user-select:text}
     const music = !!(media && media.playing && mod('music'));
     let mood = pet.until > now ? pet.mood : music ? 'dance' : (h >= 23 || h < 7) ? 'sleep' : 'idle';
     if (now > pet.blinkAt){ pet.blinkTill = now + 160; pet.blinkAt = now + 2500 + Math.random()*4000; }
-    if (mood === 'dance') pet.flap = (Math.floor(now / 250) % 2) === 0;
-    const opts = {closed: mood === 'sleep' || (mood === 'idle' && now < pet.blinkTill), happy: mood === 'happy' || (mood === 'dance' && pet.flap), flap: (mood === 'dance' || mood === 'happy') && pet.flap};
+    // under music: a slow sway, a happy look now and then, wings only once in a while
+    if (mood === 'dance') pet.flap = (now % 9000) < 450;
+    const opts = {closed: mood === 'sleep' || (mood === 'idle' && now < pet.blinkTill), happy: mood === 'happy' || (mood === 'dance' && (now % 6000) < 1600), flap: (mood === 'dance' || mood === 'happy') && pet.flap};
     if (mood === 'happy') pet.flap = (Math.floor(now / 140) % 2) === 0;
     const key = kind + set.petColor + JSON.stringify(opts);
     if (key !== pet.key){ pet.key = key; $('petB').innerHTML = PET.svg(kind, +set.petColor || 0, opts); }

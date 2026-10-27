@@ -1,5 +1,5 @@
 {
-  "version": "0.10.0",
-  "url": "https://raw.githubusercontent.com/stariyyded-ai/DynamicIsland/main/releases/Island-0.10.0.zip",
-  "notes": "Питомец рядом с островом: дракончик, котик или лисёнок. Проигрыватель выровнен по центру. Попытка управлять музыкой в браузерах, которые не сообщают о ней Windows."
+  "version": "0.10.1",
+  "url": "https://raw.githubusercontent.com/stariyyded-ai/DynamicIsland/main/releases/Island-0.10.1.zip",
+  "notes": "Пауза и переключение музыки в браузерах, которые не сообщают о ней Windows. Питомец спокойнее под музыку, крылья сложены."
 }
