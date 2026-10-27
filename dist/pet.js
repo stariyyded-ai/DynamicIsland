@@ -48,30 +48,35 @@
   const ln = (extra) => ' stroke="' + K + '" stroke-width="' + (extra || 1) + '" stroke-linejoin="round"';
 
   function dragon(p, o, g){
+    // wings stay folded out of sight: at this size anything sticking out sideways reads as raised paws
     const wing = side => {
+      if (!o.flap || !o.wings) return '';
       const mirror = side > 0 ? ' transform="translate(60 0) scale(-1 1)"' : '';
-      // tucked small behind the head at rest; spread out for a happy flap
-      const rot = o.flap ? ' transform="translate(20 36) rotate(-12) scale(.95) translate(-20 -36)"' : ' transform="translate(21 36) rotate(32) scale(.62) translate(-20 -36)"';
-      return '<g' + mirror + '><g' + rot + '><path d="M20 34 C12 30 5 24 3 15 C7 18 9 18 11 17 C10 21 12 23 14 23 C14 27 16 29 19 29 Z" fill="' + p.w + '"' + ln() + '/>' +
-        '<path d="M19 32 C13 28 8 22 6 18 M19 31 C15 27 13 24 12 20" fill="none" stroke="' + p.wm + '" stroke-width=".9" stroke-linecap="round" opacity=".8"/></g></g>';
+      return '<g' + mirror + '><path d="M21 36 C14 33 8 28 6 21 C9 23 11 23 13 22 C12 26 14 28 16 28 C16 31 18 33 21 33 Z" fill="' + p.w + '"' + ln() + '/>' +
+        '<path d="M20 34.5 C15 32 11 28 9 24" fill="none" stroke="' + p.wm + '" stroke-width=".9" stroke-linecap="round" opacity=".8"/></g>';
     };
     return '<path d="M40 47 C50 48 55 43 53 36 C52 33 49 34 50 37 C51 41 47 43 40 42 Z" fill="' + p.b + '"' + ln() + '/>' +
-      '<path d="M52 35 l3 -3 l-0.5 4 z" fill="' + p.h + '"' + ln(.7) + '/>' +
+      // spikes along the tail
+      '<path d="M44 44.6 l1.2 -2.6 l1.4 2.3 M48 43.4 l1.6 -2.4 l1 2.6 M51 40.4 l2.2 -1.6 l.2 2.6" fill="' + p.h + '"' + ln(.7) + '/>' +
+      '<path d="M52.4 35.6 l3.4 -2.6 l-.9 4.2 z" fill="' + p.h + '"' + ln(.7) + '/>' +
       wing(-1) + wing(1) +
       '<ellipse cx="30" cy="43" rx="12.5" ry="9" fill="url(#' + g + 'b)"' + ln() + '/>' +
       '<ellipse cx="30" cy="45" rx="7.5" ry="6" fill="' + p.l + '"/>' +
       '<path d="M26.5 41.5 h7 M26 44.5 h8 M27 47.5 h6" stroke="' + p.s + '" stroke-width=".7" opacity=".45"/>' +
+      // little front paws resting on the belly
+      '<ellipse cx="24.2" cy="44" rx="2.6" ry="2" fill="' + p.b + '"' + ln(.9) + '/><ellipse cx="35.8" cy="44" rx="2.6" ry="2" fill="' + p.b + '"' + ln(.9) + '/>' +
       '<ellipse cx="23.5" cy="51.5" rx="4" ry="2.4" fill="' + p.b + '"' + ln() + '/><ellipse cx="36.5" cy="51.5" rx="4" ry="2.4" fill="' + p.b + '"' + ln() + '/>' +
-      '<path d="M15 16 C10 11 9 6 11 3 C13 8 16 10 19 12 Z" fill="' + p.h + '"' + ln() + '/>' +
-      '<path d="M45 16 C50 11 51 6 49 3 C47 8 44 10 41 12 Z" fill="' + p.h + '"' + ln() + '/>' +
-      '<path d="M12 22 C6 21 3 24 2 27 C6 26 9 27 12 27 Z" fill="' + p.w + '"' + ln() + '/>' +
-      '<path d="M48 22 C54 21 57 24 58 27 C54 26 51 27 48 27 Z" fill="' + p.w + '"' + ln() + '/>' +
-      '<ellipse cx="30" cy="23.5" rx="18.5" ry="15" fill="url(#' + g + 'h)"' + ln(1.1) + '/>' +
-      '<path d="M26 9.4 l2 -4 l2 4 M30 9 l2.2 -3.4 l1.6 3.8" fill="' + p.s + '"' + ln(.8) + '/>' +
-      eyes(p, o, 22, 38, 23.5, 4.6, 5.4, true) +
-      blush(17, 43, 29.5) +
-      '<circle cx="27.6" cy="30" r=".75" fill="' + K + '"/><circle cx="32.4" cy="30" r=".75" fill="' + K + '"/>' +
-      mouth(o, 32.5);
+      // swept-back horns
+      '<path d="M17 12.5 C14 8 14 4.5 16 2 C17 6 19 8.5 22 10 Z" fill="' + p.h + '"' + ln() + '/>' +
+      '<path d="M43 12.5 C46 8 46 4.5 44 2 C43 6 41 8.5 38 10 Z" fill="' + p.h + '"' + ln() + '/>' +
+      '<ellipse cx="30" cy="23.5" rx="17.5" ry="14.5" fill="url(#' + g + 'h)"' + ln(1.1) + '/>' +
+      '<path d="M26.6 9.6 l1.7 -3.6 l1.7 3.4 M30 9.4 l1.9 -3.2 l1.5 3.6" fill="' + p.s + '"' + ln(.8) + '/>' +
+      // snout
+      '<ellipse cx="30" cy="30.6" rx="7" ry="4.4" fill="' + p.l + '" opacity=".55"/>' +
+      eyes(p, o, 22.5, 37.5, 22.5, 4.4, 5.2, true) +
+      blush(17.5, 42.5, 28.5) +
+      '<ellipse cx="27.7" cy="29.6" rx=".8" ry=".6" fill="' + K + '"/><ellipse cx="32.3" cy="29.6" rx=".8" ry=".6" fill="' + K + '"/>' +
+      mouth(o, 32.2);
   }
 
   function cat(p, o, g){
