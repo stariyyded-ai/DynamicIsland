@@ -195,14 +195,42 @@ pub fn apply_visibility(app: &AppHandle) {
     }
 }
 
+#[tauri::command]
+fn page_log(msg: String) {
+    sys::log(&format!("page: {}", msg));
+}
+
+/// Where the island window is and whether it is shown, for the log.
+fn island_state(win: &tauri::WebviewWindow) -> String {
+    let pos = win.outer_position().map(|p| format!("{},{}", p.x, p.y)).unwrap_or_default();
+    let size = win.outer_size().map(|p| format!("{}x{}", p.width, p.height)).unwrap_or_default();
+    let mons: Vec<String> = win
+        .available_monitors()
+        .unwrap_or_default()
+        .iter()
+        .map(|m| format!("{},{} {}x{}", m.position().x, m.position().y, m.size().width, m.size().height))
+        .collect();
+    format!(
+        "island at {} size {} visible {:?} full {} user_hidden {} mon {} monitors [{}]",
+        pos, size, win.is_visible().ok(), sys::FULL_NOW.load(Ordering::SeqCst), sys::USER_HIDDEN.load(Ordering::SeqCst),
+        current_settings()["mon"], mons.join("; ")
+    )
+}
+
 /// Keeps the island on screen: puts it back on top when another app pushed it under,
 /// and shows it again if it got hidden by mistake.
 /// The page is never reloaded from here: Windows slows the timers of this click-through window,
 /// so a quiet page is not a frozen one.
 fn watchdog(app: AppHandle) {
+    let mut last = String::new();
     loop {
         std::thread::sleep(std::time::Duration::from_secs(3));
         let Some(win) = app.get_webview_window("island") else { continue };
+        let state = island_state(&win);
+        if state != last {
+            sys::log(&state);
+            last = state;
+        }
         let hide = sys::FULL_NOW.load(Ordering::SeqCst) || sys::USER_HIDDEN.load(Ordering::SeqCst);
         if hide {
             continue;
@@ -479,7 +507,7 @@ fn main() {
             clip_list, clip_set, note_load, note_save, open_settings_cmd, notif_open, notif_act, copy_show,
             sticker_create, sticker_get, sticker_update, sticker_resize, sticker_delete, stickers_show_all, stickers_count, reminder_action,
             shelf_list, shelf_add, shelf_remove, shelf_clear, shelf_open, shelf_drag,
-            update_check, update_install, app_version
+            update_check, update_install, app_version, page_log
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -516,9 +544,10 @@ fn main() {
 
             let m_settings = MenuItem::with_id(app, "settings", "Настройки…", true, None::<&str>)?;
             let m_toggle = MenuItem::with_id(app, "toggle", "Скрыть остров", true, None::<&str>)?;
+            let m_back = MenuItem::with_id(app, "back", "Вернуть остров", true, None::<&str>)?;
             let m_quit = MenuItem::with_id(app, "quit", "Выход", true, None::<&str>)?;
             let sep = PredefinedMenuItem::separator(app)?;
-            let menu = Menu::with_items(app, &[&m_settings, &m_toggle, &sep, &m_quit])?;
+            let menu = Menu::with_items(app, &[&m_settings, &m_toggle, &m_back, &sep, &m_quit])?;
             let toggle_item = m_toggle.clone();
             let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?;
             TrayIconBuilder::with_id("tray")
@@ -533,6 +562,18 @@ fn main() {
                         sys::USER_HIDDEN.store(hidden, Ordering::SeqCst);
                         let _ = toggle_item.set_text(if hidden { "Показать остров" } else { "Скрыть остров" });
                         apply_visibility(app);
+                    }
+                    "back" => {
+                        // the escape hatch when the island can't be seen: put it back on the main screen and redraw it
+                        sys::USER_HIDDEN.store(false, Ordering::SeqCst);
+                        sys::FULL_NOW.store(false, Ordering::SeqCst);
+                        let _ = toggle_item.set_text("Скрыть остров");
+                        position_island(app);
+                        apply_visibility(app);
+                        if let Some(w) = app.get_webview_window("island") {
+                            sys::log(&format!("tray: bring back, {}", island_state(&w)));
+                            let _ = w.reload();
+                        }
                     }
                     "quit" => app.exit(0),
                     _ => {}
